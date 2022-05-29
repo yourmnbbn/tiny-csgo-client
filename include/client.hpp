@@ -117,7 +117,7 @@ protected:
 		m_WriteBuf.WriteLongLong(localsid.ConvertToUint64());
 		m_WriteBuf.WriteBytes(steamkey, keysize);
 
-		co_await socket.async_send_to(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
 		//Wait for connect response, TO DO: add timeout support
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
@@ -154,7 +154,7 @@ protected:
 		m_WriteBuf.WriteLong(-1);
 		m_WriteBuf.WriteByte(A2S_GETCHALLENGE);
 
-		co_await socket.async_send_to(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
 		//Wait for challenge response, TO DO: add timeout support
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
