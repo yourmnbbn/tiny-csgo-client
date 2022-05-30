@@ -20,7 +20,6 @@
 using namespace asio::ip;
 
 inline asio::io_context g_IoContext;
-constexpr int CONNECT_PROTOCOL_VERSION = 13832;
 
 class Client
 {
@@ -73,15 +72,15 @@ protected:
 		
 		udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
 		auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
-
-		auto [success, challenge, protocol_version] = co_await GetChallenge(socket, remote_endpoint);
+		
+		auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint);
 		if (!success)
 		{
 			std::cout << "Can't get challenge from target server!\n";
 			co_return;
 		}
 
-		if(!(co_await SendConnectPacket(socket, remote_endpoint, challenge, protocol_version)))
+		if(!(co_await SendConnectPacket(socket, remote_endpoint, challenge, auth_proto_ver, connect_proto_ver)))
 			co_return;
 
 		co_await HandleIncomingPacket(socket, remote_endpoint);
@@ -89,13 +88,17 @@ protected:
 		co_return;
 	}
 	
-	asio::awaitable<bool> SendConnectPacket(udp::socket& socket, udp::endpoint& remote_endpoint, uint32_t challenge, uint32_t protocol_version)
+	asio::awaitable<bool> SendConnectPacket(udp::socket& socket, 
+		udp::endpoint& remote_endpoint, 
+		uint32_t challenge, 
+		uint32_t auth_proto_version, 
+		uint32_t connect_proto_ver)
 	{
 		ResetWriteBuffer();
 		m_WriteBuf.WriteLong(-1);
-		m_WriteBuf.WriteByte(C2S_CONNECT); //C2S_CONNECT
-		m_WriteBuf.WriteLong(CONNECT_PROTOCOL_VERSION); //connect protocol version
-		m_WriteBuf.WriteLong(protocol_version); //auth protocol version
+		m_WriteBuf.WriteByte(C2S_CONNECT);
+		m_WriteBuf.WriteLong(connect_proto_ver);
+		m_WriteBuf.WriteLong(auth_proto_version);
 		m_WriteBuf.WriteLong(challenge);
 		m_WriteBuf.WriteString(m_NickName.c_str());
 		m_WriteBuf.WriteString(m_PassWord.c_str());
@@ -146,12 +149,13 @@ protected:
 		
 	}
 
-	asio::awaitable<std::tuple<bool, uint32_t, uint32_t>> GetChallenge(udp::socket& socket, udp::endpoint& remote_endpoint)
+	asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> GetChallenge(udp::socket& socket, udp::endpoint& remote_endpoint)
 	{
 		//Write request challenge packet
 		ResetWriteBuffer();
 		m_WriteBuf.WriteLong(-1);
 		m_WriteBuf.WriteByte(A2S_GETCHALLENGE);
+		m_WriteBuf.WriteString("connect0x00000000");
 
 		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
@@ -162,18 +166,29 @@ protected:
 		//Read information from buffer
 		ResetReadBuffer();
 		if (m_ReadBuf.ReadLong() != -1 || m_ReadBuf.ReadByte() != S2C_CHALLENGE)
-			co_return std::make_tuple<bool, uint32_t, uint32_t>(false, 0, 0);
+			co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(false, 0, 0, 0);
 		
 		auto challenge = m_ReadBuf.ReadLong();
-		auto protocol_version = m_ReadBuf.ReadLong();
+		auto auth_protocol_version = m_ReadBuf.ReadLong();
 		auto encrypt_key = m_ReadBuf.ReadShort();
 		auto server_steamid = m_ReadBuf.ReadLongLong();
 		auto vac = m_ReadBuf.ReadByte();
 
-		std::cout << std::format("Get server challenge number : {:#010x}, prorocol: {:#04x}, server steam: {}, vac {}\n",
-			challenge, protocol_version, server_steamid, vac ? "on" : "off");
+		char buf[48];
+		m_ReadBuf.ReadString(buf, sizeof(buf)); //always will be "connect-retry" ?
+		auto connect_protocol_version = m_ReadBuf.ReadLong();
+		m_ReadBuf.ReadString(buf, sizeof(buf)); //lobby name
+		auto require_pw = m_ReadBuf.ReadByte();
+		auto lobby_id = m_ReadBuf.ReadLongLong();
+		
+		std::cout << std::format("Server using '{}' lobbies, requiring pw {}, lobby id {:#010x}\n", 
+			buf, require_pw ? "yes" : "no", (uint64_t)lobby_id);
 
-		co_return std::make_tuple<bool, uint32_t, uint32_t>(true, (uint32_t)challenge, (uint32_t)protocol_version);
+		std::cout << std::format("Get server challenge number : {:#010x}, auth prorocol: {:#04x}, server steam: {}, vac {}\n",
+			challenge, auth_protocol_version, server_steamid, vac ? "on" : "off");
+
+		co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(true, 
+			(uint32_t)challenge, (uint32_t)auth_protocol_version, (uint32_t)connect_protocol_version);
 	}
 
 	asio::awaitable<void> HandleIncomingPacket(udp::socket& socket, udp::endpoint& remote_endpoint)
