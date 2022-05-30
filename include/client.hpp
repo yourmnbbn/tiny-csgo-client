@@ -73,7 +73,6 @@ protected:
 		
 		udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
 		auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
-		auto recv_endpoint = socket.local_endpoint();
 
 		auto [success, challenge, protocol_version] = co_await GetChallenge(socket, remote_endpoint);
 		if (!success)
@@ -121,7 +120,7 @@ protected:
 
 		//Wait for connect response, TO DO: add timeout support
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
-		size_t n = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+		co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 
 		ResetReadBuffer();
 		if (m_ReadBuf.ReadLong() != -1)
@@ -158,7 +157,7 @@ protected:
 
 		//Wait for challenge response, TO DO: add timeout support
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
-		size_t n = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+		co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 		
 		//Read information from buffer
 		ResetReadBuffer();
