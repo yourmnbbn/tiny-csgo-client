@@ -14,9 +14,12 @@
 #include <bitbuf.h>
 #include <steam_api.h>
 #include <strtools.h>
+#include <checksum_crc.h>
 
-//from cstrike15_src
-#include "proto_oob.h"	
+#include "common/proto_oob.h"
+#include "common/protocol.h"
+#include "netmessage/netmessages_signon.h"
+#include "netmessage/netmessages.h"
 
 using namespace asio::ip;
 
@@ -74,7 +77,7 @@ protected:
 		udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
 		auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
 		
-		auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint);
+		auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint, 0);
 		if (!success)
 		{
 			std::cout << "Connection failed after challenge response!\n";
@@ -88,7 +91,7 @@ protected:
 
 		co_return;
 	}
-	
+
 	asio::awaitable<bool> SendConnectPacket(
 		udp::socket& socket, 
 		udp::endpoint& remote_endpoint, 
@@ -109,7 +112,6 @@ protected:
 		m_WriteBuf.WriteLongLong(0); //reservation cookie
 		m_WriteBuf.WriteByte(1); //platform
 
-		constexpr auto STEAM_KEYSIZE = 2048;
 		unsigned char steamkey[STEAM_KEYSIZE];
 		unsigned int keysize = 0;
 
@@ -120,7 +122,7 @@ protected:
 		m_WriteBuf.WriteShort(keysize + sizeof(uint64));
 		m_WriteBuf.WriteLongLong(localsid.ConvertToUint64());
 		m_WriteBuf.WriteBytes(steamkey, keysize);
-
+		
 		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
 		//Wait for connect response, TO DO: add timeout support
@@ -142,6 +144,8 @@ protected:
 			co_return false;
 
 		case S2C_CONNECTION:
+			//Tell server that we are connected, ready to receive netmessages
+			co_await SetSignonState(socket, remote_endpoint, SIGNONSTATE_CONNECTED, -1);
 			co_return true;
 
 		default:
@@ -242,11 +246,51 @@ protected:
 		co_return;
 	}
 
+	asio::awaitable<void> SetSignonState(udp::socket& socket, udp::endpoint& remote_endpoint, int state, int count)
+	{
+		CNETMsg_SignonState_t signonState(state, count);
+		co_await SendProtobufMessage(socket, remote_endpoint, signonState);
+	}
+
+	asio::awaitable<void> SendProtobufMessage(udp::socket& socket, udp::endpoint& remote_endpoint, INetMessage& msg)
+	{
+		ResetWriteBuffer();
+		m_WriteBuf.WriteLong(1); //out sequence, hard code this for now
+		m_WriteBuf.WriteLong(0); //In sequence
+		bf_write flagsPos = m_WriteBuf;
+		m_WriteBuf.WriteByte(0); //Flag place holder
+		m_WriteBuf.WriteShort(0);//checksum place holder
+
+		int nCheckSumStart = m_WriteBuf.GetNumBytesWritten();
+
+		m_WriteBuf.WriteByte(0); //InReliableState
+
+		msg.WriteToBuffer(m_WriteBuf);
+
+		flagsPos.WriteByte(0);
+
+		const void* pvData = m_WriteBuf.GetData() + nCheckSumStart;
+		int nCheckSumBytes = m_WriteBuf.GetNumBytesWritten() - nCheckSumStart;
+		unsigned short usCheckSum = BufferToShortChecksum(pvData, nCheckSumBytes);
+		flagsPos.WriteUBitLong(usCheckSum, 16);
+
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
+	}
+
 private:
+
+	inline unsigned short BufferToShortChecksum(const void* pvData, size_t nLength)
+	{
+		CRC32_t crc = CRC32_ProcessSingleBuffer(pvData, nLength);
+
+		unsigned short lowpart = (crc & 0xffff);
+		unsigned short highpart = ((crc >> 16) & 0xffff);
+
+		return (unsigned short)(lowpart ^ highpart);
+	}
 
 	inline void ResetWriteBuffer()
 	{
-		memset(m_Buf, 0, m_WriteBuf.GetNumBytesWritten());
 		m_WriteBuf.Reset();
 	}
 

@@ -4,7 +4,6 @@
 ## Dependencies
  - [hl2sdk-csgo](https://github.com/alliedmodders/hl2sdk/tree/csgo)
  - [Asio](https://github.com/chriskohlhoff/asio)
- - [cstrike15_src](https://github.com/perilouswithadollarsign/cstrike15_src/) (For proto_oob.h only)
 
 ## Example Usage
 ```cpp
