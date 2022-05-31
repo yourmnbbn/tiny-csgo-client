@@ -13,6 +13,7 @@
 //from hl2sdk-csgo
 #include <bitbuf.h>
 #include <steam_api.h>
+#include <strtools.h>
 
 //from cstrike15_src
 #include "proto_oob.h"	
@@ -76,7 +77,7 @@ protected:
 		auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint);
 		if (!success)
 		{
-			std::cout << "Can't get challenge from target server!\n";
+			std::cout << "Connection failed after challenge response!\n";
 			co_return;
 		}
 
@@ -88,7 +89,8 @@ protected:
 		co_return;
 	}
 	
-	asio::awaitable<bool> SendConnectPacket(udp::socket& socket, 
+	asio::awaitable<bool> SendConnectPacket(
+		udp::socket& socket, 
 		udp::endpoint& remote_endpoint, 
 		uint32_t challenge, 
 		uint32_t auth_proto_version, 
@@ -149,24 +151,31 @@ protected:
 		
 	}
 
-	asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> GetChallenge(udp::socket& socket, udp::endpoint& remote_endpoint)
+	asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> GetChallenge(
+		udp::socket& socket, 
+		udp::endpoint& remote_endpoint,
+		uint32_t cached_challenge)
 	{
 		//Write request challenge packet
 		ResetWriteBuffer();
 		m_WriteBuf.WriteLong(-1);
 		m_WriteBuf.WriteByte(A2S_GETCHALLENGE);
-		m_WriteBuf.WriteString("connect0x00000000");
-
-		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
+		
+		auto numBytesWritten = m_WriteBuf.GetNumBytesWritten();
+		auto len = snprintf((char*)(m_Buf + numBytesWritten), sizeof(m_Buf) - numBytesWritten, "connect0x%08X", cached_challenge);
+		
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten() + len+1), remote_endpoint, asio::use_awaitable);
 
 		//Wait for challenge response, TO DO: add timeout support
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 		co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 		
+		auto failed_obj = std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(false, 0, 0, 0);
+
 		//Read information from buffer
 		ResetReadBuffer();
 		if (m_ReadBuf.ReadLong() != -1 || m_ReadBuf.ReadByte() != S2C_CHALLENGE)
-			co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(false, 0, 0, 0);
+			co_return failed_obj;
 		
 		auto challenge = m_ReadBuf.ReadLong();
 		auto auth_protocol_version = m_ReadBuf.ReadLong();
@@ -175,17 +184,43 @@ protected:
 		auto vac = m_ReadBuf.ReadByte();
 
 		char buf[48];
-		m_ReadBuf.ReadString(buf, sizeof(buf)); //always will be "connect-retry" ?
+		m_ReadBuf.ReadString(buf, sizeof(buf));
+		if (StringHasPrefix(buf, "connect"))
+		{
+			if (StringHasPrefix(buf, "connect-retry"))
+			{
+				co_return co_await GetChallenge(socket, remote_endpoint, challenge);
+			}
+			else if (StringHasPrefix(buf, "connect-lan-only"))
+			{
+				std::cout << "You cannot connect to this CS:GO server because it is restricted to LAN connections only.\n";
+				co_return failed_obj;
+			}
+			else if (StringHasPrefix(buf, "connect-matchmaking-only"))
+			{
+				std::cout << "You must use matchmaking to connect to this CS:GO server.\n";
+				co_return failed_obj;
+			}
+			//else if... don't cover other circumstances for now
+		}
+		else
+		{
+			std::cout << "Corrupted challenge response!\n";
+			co_return failed_obj;
+		}
+
 		auto connect_protocol_version = m_ReadBuf.ReadLong();
 		m_ReadBuf.ReadString(buf, sizeof(buf)); //lobby name
 		auto require_pw = m_ReadBuf.ReadByte();
 		auto lobby_id = m_ReadBuf.ReadLongLong();
+		auto dcFriendsReqd = m_ReadBuf.ReadByte() != 0;
+		auto officialValveServer = m_ReadBuf.ReadByte() != 0;
 		
 		std::cout << std::format("Server using '{}' lobbies, requiring pw {}, lobby id {:#010x}\n", 
 			buf, require_pw ? "yes" : "no", (uint64_t)lobby_id);
 
-		std::cout << std::format("Get server challenge number : {:#010x}, auth prorocol: {:#04x}, server steam: {}, vac {}\n",
-			challenge, auth_protocol_version, server_steamid, vac ? "on" : "off");
+		std::cout << std::format("Get server challenge number : {:#010x}, auth prorocol: {:#04x}, server steam: {}, vac {}, dcFriendsReqd {}, officialValveServer {}\n",
+			challenge, auth_protocol_version, server_steamid, vac ? "on" : "off", dcFriendsReqd, officialValveServer);
 
 		co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(true, 
 			(uint32_t)challenge, (uint32_t)auth_protocol_version, (uint32_t)connect_protocol_version);
