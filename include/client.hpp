@@ -8,6 +8,9 @@
 #include <iostream>
 #include <string>
 #include <format>
+#include <mutex>
+#include <vector>
+#include <ranges>
 #include <asio.hpp>
 
 //from hl2sdk-csgo
@@ -68,6 +71,25 @@ public:
 
 	inline void RunClient() { g_IoContext.run(); }
 
+	void InitCommandInput()
+	{
+		thread_local bool run = false;
+		if (run)
+			return;
+
+		std::thread([this]() {
+			std::string command;
+			while (std::getline(std::cin, command))
+			{
+				std::lock_guard<std::mutex> lock(m_CommandVecLock);
+				m_VecCommand.push_back(std::string(command));
+			}
+
+			}).detach();
+
+		run = true;
+	}
+
 protected:
 	asio::awaitable<void> ConnectToServer()
 	{
@@ -86,7 +108,7 @@ protected:
 
 		if(!(co_await SendConnectPacket(socket, remote_endpoint, challenge, auth_proto_ver, connect_proto_ver)))
 			co_return;
-
+		
 		co_await HandleIncomingPacket(socket, remote_endpoint);
 
 		co_return;
@@ -103,7 +125,7 @@ protected:
 		m_WriteBuf.WriteLong(-1);
 		m_WriteBuf.WriteByte(C2S_CONNECT);
 		m_WriteBuf.WriteLong(connect_proto_ver);
-		m_WriteBuf.WriteLong(auth_proto_version);
+		m_WriteBuf.WriteLong(auth_proto_version); 
 		m_WriteBuf.WriteLong(challenge);
 		m_WriteBuf.WriteString(m_NickName.c_str());
 		m_WriteBuf.WriteString(m_PassWord.c_str());
@@ -235,15 +257,38 @@ protected:
 		//Process all incoming packet here after we established connection.
 		while (true)
 		{
+			co_await HandleStringCommand(socket, remote_endpoint);
 			co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 			size_t n = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 
 			//TO DO : Process all other packets here
 			ResetReadBuffer();
-			PrintRecvBuffer(n);
+			//PrintRecvBuffer(n);
 		}
 
 		co_return;
+	}
+
+	asio::awaitable<void> HandleStringCommand(udp::socket& socket, udp::endpoint& remote_endpoint)
+	{
+		auto trim = [](std::string str) {
+			str.erase(0, str.find_first_not_of(" "));
+			str.erase(str.find_last_not_of(" ") + 1);
+			return str;
+		};
+
+		auto isEmpty = [](std::string str) { return !str.empty(); };
+
+		{
+			std::lock_guard<std::mutex> lock(m_CommandVecLock);
+
+			for (std::string command : m_VecCommand | std::views::transform(trim) | std::views::filter(isEmpty))
+			{
+				co_await SendStringCommand(socket, remote_endpoint, command);
+			}
+
+			m_VecCommand.clear();
+		}
 	}
 
 	asio::awaitable<void> SetSignonState(udp::socket& socket, udp::endpoint& remote_endpoint, int state, int count)
@@ -252,11 +297,25 @@ protected:
 		co_await SendProtobufMessage(socket, remote_endpoint, signonState);
 	}
 
+	asio::awaitable<void> SendStringCommand(udp::socket& socket, udp::endpoint& remote_endpoint, std::string& command)
+	{
+		CNETMsg_StringCmd_t stringCmd(command.c_str());
+
+		if (command == "disconnect")
+		{
+			CNETMsg_Disconnect_t disconnect;
+			disconnect.set_text("Disconnect.");
+			co_await SendProtobufMessage(socket, remote_endpoint, disconnect);
+		}
+
+		co_await SendProtobufMessage(socket, remote_endpoint, stringCmd);
+	}
+
 	asio::awaitable<void> SendProtobufMessage(udp::socket& socket, udp::endpoint& remote_endpoint, INetMessage& msg)
 	{
 		ResetWriteBuffer();
-		m_WriteBuf.WriteLong(1); //out sequence, hard code this for now
-		m_WriteBuf.WriteLong(0); //In sequence
+		m_WriteBuf.WriteLong(m_nOutSequenceNr++); //out sequence
+		m_WriteBuf.WriteLong(m_nInSequenceNr); //In sequence
 		bf_write flagsPos = m_WriteBuf;
 		m_WriteBuf.WriteByte(0); //Flag place holder
 		m_WriteBuf.WriteShort(0);//checksum place holder
@@ -312,6 +371,14 @@ private:
 	char m_Buf[1024];
 	bf_write m_WriteBuf;
 	bf_read m_ReadBuf;
+
+	//commandline
+	std::mutex m_CommandVecLock;
+	std::vector<std::string> m_VecCommand;
+
+	//Net channel
+	int m_nInSequenceNr = 0;
+	int m_nOutSequenceNr = 1;
 
 	//server info
 	std::string m_Ip;
