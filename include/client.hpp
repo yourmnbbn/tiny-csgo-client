@@ -18,6 +18,10 @@
 #include <steam_api.h>
 #include <strtools.h>
 #include <checksum_crc.h>
+#include <mathlib/IceKey.H>
+#include <utlmemory.h>
+#include <lzss.h>
+#include <vstdlib/random.h>
 
 #include "common/proto_oob.h"
 #include "common/protocol.h"
@@ -27,6 +31,9 @@
 using namespace asio::ip;
 
 inline asio::io_context g_IoContext;
+
+constexpr int NET_CRYPT_KEY_LENGTH = 16;
+constexpr int NET_COMPRESSION_STACKBUF_SIZE = 4096;
 
 class Client
 {
@@ -105,6 +112,7 @@ protected:
 			std::cout << "Connection failed after challenge response!\n";
 			co_return;
 		}
+		m_HostVersion = connect_proto_ver;
 
 		if(!(co_await SendConnectPacket(socket, remote_endpoint, challenge, auth_proto_ver, connect_proto_ver)))
 			co_return;
@@ -263,7 +271,16 @@ protected:
 
 			//TO DO : Process all other packets here
 			ResetReadBuffer();
-			//PrintRecvBuffer(n);
+
+			if (ReadBufferHeaderInt32() == -1)
+			{
+				m_ReadBuf.ReadLong(); //-1
+
+				ProcessConnectionlessPacket();
+				continue;
+			}
+
+			ProcessPacket(n);
 		}
 
 		co_return;
@@ -290,6 +307,104 @@ protected:
 			m_VecCommand.clear();
 		}
 	}
+	
+
+	void ProcessPacket(int packetSize)
+	{
+		//Message decryption, for now we only support default encryption key
+		CUtlMemoryFixedGrowable< byte, NET_COMPRESSION_STACKBUF_SIZE > memDecryptedAll(NET_COMPRESSION_STACKBUF_SIZE);
+		IceKey iceKey(2);
+		iceKey.set(GetEncryptionKey());
+
+		if ((packetSize % iceKey.blockSize()) == 0)
+		{
+			// Decrypt the message
+			memDecryptedAll.EnsureCapacity(packetSize);
+			unsigned char* pchCryptoBuffer = (unsigned char*)stackalloc(iceKey.blockSize());
+			for (int k = 0; k < (int)packetSize; k += iceKey.blockSize())
+			{
+				iceKey.decrypt((const unsigned char*)(m_Buf + k), pchCryptoBuffer);
+				Q_memcpy(memDecryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
+			}
+
+			// Check how much random fudge we have
+			int numRandomFudgeBytes = *memDecryptedAll.Base();
+			if ((numRandomFudgeBytes > 0) && (int(numRandomFudgeBytes + 1 + sizeof(int32)) < packetSize))
+			{
+				// Fetch the size of the encrypted message
+				int32 numBytesWrittenWire = 0;
+				Q_memcpy(&numBytesWrittenWire, memDecryptedAll.Base() + 1 + numRandomFudgeBytes, sizeof(int32));
+				int32 const numBytesWritten = BigLong(numBytesWrittenWire);	// byteswap from the wire
+
+				// Make sure the total size of the message matches the expectations
+				if (int(numRandomFudgeBytes + 1 + sizeof(int32) + numBytesWritten) == packetSize)
+				{
+					// Fix the packet to point at decrypted data!
+					packetSize = numBytesWritten;
+					Q_memcpy(m_Buf, memDecryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), packetSize);
+				}
+			}
+		}
+		
+		//Is this message compressed?
+		constexpr auto NET_HEADER_FLAG_COMPRESSEDPACKET = -3;
+		if (ReadBufferHeaderInt32() == NET_HEADER_FLAG_COMPRESSEDPACKET)
+		{
+			byte* pCompressedData = (byte*)m_Buf + sizeof(unsigned int);
+
+			CLZSS lzss;
+			// Decompress
+			int actualSize = lzss.GetActualSize(pCompressedData);
+			if (actualSize <= 0 || actualSize > NET_MAX_PAYLOAD)
+				return;
+
+			MEM_ALLOC_CREDIT();
+			CUtlMemoryFixedGrowable< byte, NET_COMPRESSION_STACKBUF_SIZE > memDecompressed(NET_COMPRESSION_STACKBUF_SIZE);
+			memDecompressed.EnsureCapacity(actualSize);
+
+			unsigned int uDecompressedSize = lzss.SafeUncompress(pCompressedData, memDecompressed.Base(), actualSize);
+			if (uDecompressedSize == 0 || ((unsigned int)actualSize) != uDecompressedSize)
+			{
+				return;
+			}
+
+			// packet->wiresize is already set
+			Q_memcpy(m_Buf, memDecompressed.Base(), uDecompressedSize);
+
+			packetSize = uDecompressedSize;
+		}
+
+		PrintRecvBuffer(packetSize);
+
+		int flags = ProcessPacketHeader(m_ReadBuf);
+
+		if (flags == -1)
+			return;
+
+		//TO DO: Handle netmessages here
+	}
+
+	//Incomplete!!!
+	int ProcessPacketHeader(bf_read& msg)
+	{
+		ResetReadBuffer();
+		int sequence = msg.ReadLong();
+		int sequence_ack = msg.ReadLong();
+		int flags = msg.ReadByte();
+
+		//TO DO: Check crc? inReliable, chocked
+
+		m_nInSequenceNr = sequence;
+		m_nOutSequenceNrAck = sequence_ack;
+
+		return flags;
+	}
+
+	void ProcessConnectionlessPacket()
+	{
+		char c = m_ReadBuf.ReadByte();
+		std::cout << std::format("Get connectionless packet : {:#04x}\n", (uint8_t)c);
+	}
 
 	asio::awaitable<void> SetSignonState(udp::socket& socket, udp::endpoint& remote_endpoint, int state, int count)
 	{
@@ -311,6 +426,7 @@ protected:
 		co_await SendProtobufMessage(socket, remote_endpoint, stringCmd);
 	}
 
+	//TO DO: Setup a netmessage stream instead of one netmessage a datagram
 	asio::awaitable<void> SendProtobufMessage(udp::socket& socket, udp::endpoint& remote_endpoint, INetMessage& msg)
 	{
 		ResetWriteBuffer();
@@ -325,7 +441,7 @@ protected:
 		m_WriteBuf.WriteByte(0); //InReliableState
 
 		msg.WriteToBuffer(m_WriteBuf);
-
+		
 		flagsPos.WriteByte(0);
 
 		const void* pvData = m_WriteBuf.GetData() + nCheckSumStart;
@@ -333,10 +449,65 @@ protected:
 		unsigned short usCheckSum = BufferToShortChecksum(pvData, nCheckSumBytes);
 		flagsPos.WriteUBitLong(usCheckSum, 16);
 
-		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
+		auto length = EncryptDatagram();
+		co_await socket.async_send_to(asio::buffer(m_Buf, length), remote_endpoint, asio::use_awaitable);
+	}
+
+	//can't use stackalloc in a awaiter function, extract it out
+	int EncryptDatagram()
+	{
+		CUtlMemoryFixedGrowable< byte, NET_COMPRESSION_STACKBUF_SIZE > memEncryptedAll(NET_COMPRESSION_STACKBUF_SIZE);
+		int length = m_WriteBuf.GetNumBytesWritten();
+
+		IceKey iceKey(2);
+		iceKey.set(GetEncryptionKey());
+
+		// Generate some random fudge, ICE operates on 64-bit blocks, so make sure our total size is a multiple of 8 bytes
+		int numRandomFudgeBytes = RandomInt(16, 72);
+		int numTotalEncryptedBytes = 1 + numRandomFudgeBytes + sizeof(int32) + length;
+		numRandomFudgeBytes += iceKey.blockSize() - (numTotalEncryptedBytes % iceKey.blockSize());
+		numTotalEncryptedBytes = 1 + numRandomFudgeBytes + sizeof(int32) + length;
+
+		char* pchRandomFudgeBytes = (char*)stackalloc(numRandomFudgeBytes);
+		for (int k = 0; k < numRandomFudgeBytes; ++k)
+			pchRandomFudgeBytes[k] = RandomInt(16, 250);
+
+		// Prepare the encrypted memory
+		memEncryptedAll.EnsureCapacity(numTotalEncryptedBytes);
+		*memEncryptedAll.Base() = numRandomFudgeBytes;
+		Q_memcpy(memEncryptedAll.Base() + 1, pchRandomFudgeBytes, numRandomFudgeBytes);
+
+		int32 const numBytesWrittenWire = BigLong(length);	// byteswap for the wire
+		Q_memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes, &numBytesWrittenWire, sizeof(numBytesWrittenWire));
+		Q_memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), m_Buf, length);
+
+		// Encrypt the message
+		unsigned char* pchCryptoBuffer = (unsigned char*)stackalloc(iceKey.blockSize());
+		for (int k = 0; k < numTotalEncryptedBytes; k += iceKey.blockSize())
+		{
+			iceKey.encrypt((const unsigned char*)(memEncryptedAll.Base() + k), pchCryptoBuffer);
+			Q_memcpy(memEncryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
+		}
+
+		Q_memcpy(m_Buf, memEncryptedAll.Base(), numTotalEncryptedBytes);
+
+		return numTotalEncryptedBytes;
 	}
 
 private:
+
+	inline byte* GetEncryptionKey()
+	{
+		static uint32 unHostVersion = m_HostVersion;
+		static byte pubEncryptionKey[NET_CRYPT_KEY_LENGTH] = {
+			'C', 'S', 'G', 'O',
+			byte((unHostVersion >> 0) & 0xFF), byte((unHostVersion >> 8) & 0xFF), byte((unHostVersion >> 16) & 0xFF), byte((unHostVersion >> 24) & 0xFF),
+			byte((unHostVersion >> 2) & 0xFF), byte((unHostVersion >> 10) & 0xFF), byte((unHostVersion >> 18) & 0xFF), byte((unHostVersion >> 26) & 0xFF),
+			byte((unHostVersion >> 4) & 0xFF), byte((unHostVersion >> 12) & 0xFF), byte((unHostVersion >> 20) & 0xFF), byte((unHostVersion >> 28) & 0xFF),
+		};
+
+		return pubEncryptionKey;
+	}
 
 	inline unsigned short BufferToShortChecksum(const void* pvData, size_t nLength)
 	{
@@ -358,6 +529,11 @@ private:
 		m_ReadBuf.Seek(0);
 	}
 
+	inline int ReadBufferHeaderInt32()
+	{
+		return *(int*)m_Buf;
+	}
+
 	inline void PrintRecvBuffer(size_t bytes)
 	{
 		for (size_t i = 0; i < bytes; i++)
@@ -368,7 +544,7 @@ private:
 	}
 
 private:
-	char m_Buf[1024];
+	char m_Buf[10240];
 	bf_write m_WriteBuf;
 	bf_read m_ReadBuf;
 
@@ -376,9 +552,13 @@ private:
 	std::mutex m_CommandVecLock;
 	std::vector<std::string> m_VecCommand;
 
+	//host information
+	int m_HostVersion;
+
 	//Net channel
 	int m_nInSequenceNr = 0;
 	int m_nOutSequenceNr = 1;
+	int m_nOutSequenceNrAck = 0;
 
 	//server info
 	std::string m_Ip;
