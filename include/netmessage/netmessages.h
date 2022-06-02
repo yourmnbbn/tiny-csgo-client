@@ -8,6 +8,7 @@
 
 #include <inetmessage.h>
 #include <netmessages.pb.h>
+//#include "../common/utldelegate.h"
 
 //The interface in the hl2sdk is outdated, this is from the cstrike15_src
 #include "inetchannelinfo.h"
@@ -33,7 +34,7 @@ public:
 
 	virtual bool ReadFromBuffer(bf_read& buffer)
 	{
-		int size = buffer.ReadLong();
+		int size = buffer.ReadVarInt32();
 		if (size < 0 || size > NET_MAX_PAYLOAD)
 		{
 			return false;
@@ -181,6 +182,7 @@ protected:
 template< int msgType, typename PB_OBJECT_TYPE, int groupType, bool bReliable >
 std::string CNetMessagePB< msgType, PB_OBJECT_TYPE, groupType, bReliable >::s_typeName;
 
+
 class CNETMsg_Tick_t : public CNetMessagePB< net_Tick, CNETMsg_Tick >
 {
 public:
@@ -231,6 +233,20 @@ public:
 		set_signon_state(state);
 		set_spawn_count(spawncount);
 		set_num_server_players(0);
+	}
+};
+
+class CNETMsg_SetConVar_t : public CNetMessagePB< net_SetConVar, CNETMsg_SetConVar, INetChannelInfo::STRINGCMD >
+{
+public:
+	CNETMsg_SetConVar_t() {}
+	CNETMsg_SetConVar_t(const char* name, const char* value)
+	{
+		AddToTail(name, value);
+	}
+	void AddToTail(const char* name, const char* value)
+	{
+		//NetMsgSetCVarUsingDictionary(mutable_convars()->add_cvars(), name, value);
 	}
 };
 
