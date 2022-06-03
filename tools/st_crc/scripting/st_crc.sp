@@ -20,12 +20,14 @@ public Action Command_GetSendTableCRC(int args)
     if(!config)
     {
         LogError("Can't find gamedata st_crc.games.txt");
+        return Plugin_Handled;
     }
 
     Address g_SendTableCRC = config.GetAddress("g_SendTableCRC");
     if(g_SendTableCRC == Address_Null)
     {
         LogError("Can't get address of g_SendTableCRC");
+        return Plugin_Handled;
     }
 
     int crc = LoadFromAddress(g_SendTableCRC, NumberType_Int32);
