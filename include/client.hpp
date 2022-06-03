@@ -28,7 +28,6 @@
 #include "common/datafragments.h"
 #include "netmessage/netmessages_signon.h"
 #include "netmessage/netmessages.h"
-//#include "netmessage/netmessageshandler.h"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -38,6 +37,10 @@ inline asio::io_context g_IoContext;
 
 constexpr int NET_CRYPT_KEY_LENGTH = 16;
 constexpr int NET_COMPRESSION_STACKBUF_SIZE = 4096;
+
+//TO DO: configure this through extern file.
+//You can get this value using st_crc plugin in tools
+constexpr int SEND_TABLE_CRC32 = 0x3C17F0B1;
 
 class Client
 {
@@ -54,7 +57,8 @@ class Client
 			{
 				CNETMsg_Tick_t tick(0, 0.f, 0.f, 0.f);
 				tick.ReadFromBuffer(buf);
-				
+				client->m_Tick = tick.tick();
+
 				std::cout << "Receive NetMessage CNETMsg_Tick_t\n";
 				std::cout << std::format("Server tick:{}, host_computationtime:{}, host_computationtime_std_deviation: {}, host_framestarttime_std_deviation: {}\n", 
 					tick.tick(), tick.host_computationtime(), tick.host_computationtime_std_deviation(), tick.host_framestarttime_std_deviation());
@@ -82,9 +86,35 @@ class Client
 
 				std::cout << std::format("signon_state: {}, spawn_count: {}\n", 
 					signonState.signon_state(), signonState.spawn_count());
+				
+				client->m_SpawnCount = signonState.spawn_count();
 
-				//ack server with the same signonstate
-				client->SendNetMessage(signonState);
+				if (signonState.signon_state() == SIGNONSTATE_NEW)
+				{
+					//Send client info, or we gonna be kicked for using different send tables
+					CCLCMsg_ClientInfo_t info;
+
+					info.set_send_table_crc(SEND_TABLE_CRC32);
+					info.set_server_count(signonState.spawn_count());
+					info.set_is_hltv(false);
+					info.set_is_replay(false);
+					info.set_friends_id(SteamUser() ? SteamUser()->GetSteamID().GetAccountID() : 0);
+					info.set_friends_name(client->m_NickName);
+					
+					client->SendNetMessage(info);
+
+					//ack server with the same signonstate
+					client->SendNetMessage(signonState);
+
+					//Make our client spawn in server, after this, our state changed from spawning to active
+					//But it's not perfect, we've jumped a lot of process to reach this
+					CNETMsg_SignonState_t statePreSpawn(SIGNONSTATE_PRESPAWN, signonState.spawn_count());
+					CNETMsg_SignonState_t stateSpawn(SIGNONSTATE_SPAWN, signonState.spawn_count());
+
+					client->SendNetMessage(statePreSpawn);
+					client->SendNetMessage(stateSpawn);
+				}
+				
 				return true;
 			}
 			case net_SetConVar:
@@ -115,11 +145,18 @@ class Client
 
 					dataFragments_t* data = client->GetCurrentFragmentData(0);
 
-					//Data
-					if (ackFrag != data->ackedFragments)
+					//Ack data
+					if (ackFrag < data->ackedFragments)
 					{
 						client->ReplyFragmentAck();
 						ackFrag = data->ackedFragments;
+					}
+
+					//We've finished the fragments reading
+					if (ackFrag == data->numFragments && ackFrag)
+					{
+						ackFrag = 0;
+						data->numFragments = 0;
 					}
 
 				}
@@ -216,8 +253,21 @@ class Client
 
 				break;
 			case svc_UserMessage:
+			{
+				CSVCMsg_UserMessage_t userMsg;
+				userMsg.ReadFromBuffer(buf);
+				
+				std::cout << "Receive NetMessage CSVCMsg_UserMessage_t\n";
+				std::cout << std::format("msg_type: {}, passthrough: {}, size: {}\n",
+					userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
 
-				break;
+				//After spawning in server, if we don't have communication, we'll be timed out.
+				//So sending empty packet to server to stay alive.
+				CNETMsg_NOP_t nop;
+				client->SendNetMessage(nop);
+
+				return true;
+			}
 			case svc_EntityMessage:
 
 				break;
@@ -231,8 +281,12 @@ class Client
 
 				break;
 			case svc_Prefetch:
-
-				break;
+			{
+				CSVCMsg_Prefetch_t prefetch;
+				prefetch.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_Prefetch_t\n";
+				return true;
+			}
 			case svc_Menu:
 
 				break;
@@ -271,7 +325,10 @@ class Client
 
 public:
 	Client() :
-		m_WriteBuf(m_Buf, sizeof(m_Buf)), m_ReadBuf(m_Buf, sizeof(m_Buf)), m_Datageam(m_DatagramBuf, sizeof(m_DatagramBuf))
+		m_WriteBuf(m_Buf, sizeof(m_Buf)), 
+		m_ReadBuf(m_Buf, sizeof(m_Buf)), 
+		m_Datageam(m_DatagramBuf, sizeof(m_DatagramBuf)),
+		m_RawDatagram(m_RawDatagramBuf, sizeof(m_RawDatagramBuf))
 	{
 		for (int i = 0; i < MAX_STREAMS; i++)
 		{
@@ -503,6 +560,7 @@ protected:
 		{
 			HandleStringCommand();
 			co_await SendDatagram(socket, remote_endpoint);
+			co_await SendRawDatagramBuffer(socket, remote_endpoint);
 
 			co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 			size_t n = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
@@ -872,6 +930,24 @@ protected:
 			if (!CNetMessageHandler::HandleNetMessageFromBuffer(this, buf, cmd))
 			{
 				printf("Got unhandle message type %X\n", cmd);
+				
+				//Read the message out of the buffer so we can continue reading the following messages
+				int size = buf.ReadVarInt32();
+				if (size < 0 || size > NET_MAX_PAYLOAD)
+				{
+					return false;
+				}
+
+				// Check its valid
+				if (size > buf.GetNumBytesLeft())
+				{
+					return false;
+				}
+				void* parseBuffer = stackalloc(size);
+				if (!buf.ReadBytes(parseBuffer, size))
+				{
+					return false;
+				}
 			}
 		}
 
@@ -951,7 +1027,7 @@ protected:
 	{
 		CNETMsg_StringCmd_t stringCmd(command.c_str());
 		SendNetMessage(stringCmd);
-
+		
 		if (command == "disconnect")
 		{
 			CNETMsg_Disconnect_t disconnect;
@@ -1018,30 +1094,39 @@ protected:
 		co_await socket.async_send_to(asio::buffer(m_Buf, length), remote_endpoint, asio::use_awaitable);
 	}
 
-	asio::awaitable<void> SendDirectDatagramBuffer(
+	asio::awaitable<void> SendRawDatagramBuffer(
 		udp::socket& socket, 
-		udp::endpoint& remote_endpoint,
-		const char* data,
-		size_t length)
+		udp::endpoint& remote_endpoint)
 	{
+		if (m_RawDatagram.GetNumBytesWritten() <= 0)
+			co_return;
+
 		ResetWriteBuffer();
 		m_WriteBuf.WriteLong(m_nOutSequenceNr++); //out sequence
 		m_WriteBuf.WriteLong(m_nInSequenceNr); //In sequence
 
-		m_WriteBuf.WriteBytes(data, length);
-		length = EncryptDatagram();
+		m_WriteBuf.WriteBytes(m_RawDatagram.GetData(), m_RawDatagram.GetNumBytesWritten());
+		m_RawDatagram.Reset();
+
+		int length = EncryptDatagram();
 		co_await socket.async_send_to(asio::buffer(m_Buf, length), remote_endpoint, asio::use_awaitable);
 	}
 
-	void SendNetMessage(INetMessage& msg)
+	inline void SendNetMessage(INetMessage& msg)
 	{
 		msg.WriteToBuffer(m_Datageam);
 	}
 
 	//Don't use this, it's dangerous, might break the rest of the packet!!!
-	void SendDirectBuffer(const void* data, size_t length)
+	inline void SendDirectBuffer(const void* data, size_t length)
 	{
 		m_Datageam.WriteBytes(data, length);
+	}
+
+	//Don't use this
+	inline void SendRawDatagram(const void* data, size_t length)
+	{
+		m_RawDatagram.WriteBytes(data, length);
 	}
 
 	//can't use stackalloc in a awaiter function, extract it out
@@ -1218,8 +1303,10 @@ private:
 private:
 	char m_Buf[NET_MAX_PAYLOAD];
 	char m_DatagramBuf[10240];
+	char m_RawDatagramBuf[1024];
 	bf_write m_WriteBuf;
 	bf_write m_Datageam;
+	bf_write m_RawDatagram;
 	bf_read m_ReadBuf;
 
 
@@ -1242,6 +1329,9 @@ private:
 	std::string m_NickName;
 	std::string m_PassWord;
 	uint16_t m_Port;
+
+	int m_Tick;
+	int m_SpawnCount;
 };
 
 
