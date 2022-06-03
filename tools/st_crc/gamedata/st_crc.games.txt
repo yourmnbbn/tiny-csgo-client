@@ -1,0 +1,32 @@
+"Games"
+{
+    "csgo"
+    {
+        "Addresses"
+        {
+            "g_SendTableCRC"
+            {
+                "signature" "SendTable_Init"
+
+                "windows"
+                {
+                    "read"      "205"
+                }
+
+                "linux"
+                {
+                    "read"      "270"
+                }
+            }
+        }
+        "Signatures"
+        {	
+            "SendTable_Init"  // Str: "SendTable_Init: called twice."
+            {
+                "library"   "engine"
+                "windows"   "\x55\x8B\xEC\x83\xEC\x0C\x83\x3D\x2A\x2A\x2A\x2A\x00\x53"
+                "linux"     "\x55\x89\xE5\x57\x56\x53\x83\xEC\x4C\xA1\x2A\x2A\x2A\x2A\x8B\x7D\x08\x85\xC0"
+            }
+        }
+    }
+}
