@@ -3,7 +3,14 @@
  
 ## Dependencies
  - [hl2sdk-csgo](https://github.com/alliedmodders/hl2sdk/tree/csgo)
- - [Asio](https://github.com/chriskohlhoff/asio)
+ - [Asio](https://github.com/chriskohlhoff/asio) 
+ - CMake
+
+## Compile and Run (Currently windows only)
+1. Configure path of hl2sdk-csgo and Asio in `build.bat`.
+2. Run `build.bat` to compile the project.
+3. Move every file in bin/windows next to `tiny-csgo-client.exe`.
+4. Run `tiny-csgo-client.exe`.
 
 ## Example Usage
 ```cpp
