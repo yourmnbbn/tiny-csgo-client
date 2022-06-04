@@ -112,12 +112,8 @@ private:
 	// Message CRC is not garanteed valid
 	// Don't use this
 	inline void					SendRawDatagram(const void* data, size_t length) { m_RawDatagram.WriteBytes(data, length); }
-	inline bool					WaitingForMoreFragment(int stream);
 
 	//Utility functions
-	inline dataFragments_t*		GetCurrentFragmentData(int stream){ return &m_ReceiveList[stream]; }
-	inline void					ReplyFragmentAck();
-
 	inline void					ResetWriteBuffer(){ m_WriteBuf.Reset(); }
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
@@ -1374,31 +1370,6 @@ inline void Client::ProcessConnectionlessPacket()
 	printf("Get connectionless packet : %02X\n", m_ReadBuf.ReadByte());
 }
 
-inline bool Client::WaitingForMoreFragment(int stream)
-{
-	dataFragments_t* data = &m_ReceiveList[stream];
-
-	if (data->ackedFragments < data->numFragments)
-		return true;
-
-	return false;
-}
-
-inline void Client::ReplyFragmentAck()
-{
-	thread_local bool flag = true;
-
-	if (flag)
-	{
-		SendDirectBuffer("\x00\x00\x00\x00", 4);
-	}
-	else
-	{
-		CNETMsg_NOP_t nop;
-		SendNetMessage(nop);
-	}
-	flag = flag ? false : true;
-}
 
 inline byte* Client::GetEncryptionKey()
 {
