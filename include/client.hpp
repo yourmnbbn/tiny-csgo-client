@@ -5,6 +5,7 @@
 #pragma once
 #endif
 
+#include <iostream>
 #include <string>
 #include <mutex>
 #include <vector>
@@ -27,6 +28,7 @@
 #include "netmessage/netmessages_signon.h"
 #include "netmessage/netmessages.h"
 #include "netmessage/splitmessage.hpp"
+#include "netmessage/subchannel.hpp"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -141,7 +143,11 @@ private:
 	int					m_nOutSequenceNr = 1;
 	int					m_nOutSequenceNrAck = 0;
 	int					m_PacketDrop = 0;
+	int					m_nOutReliableState = 0;
+	// state of incoming reliable data
+	int					m_nInReliableState = 0;
 	dataFragments_t		m_ReceiveList[MAX_STREAMS]; // receive buffers for streams
+	subChannel_s		m_SubChannels[MAX_SUBCHANNELS];
 
 	//server info
 	std::string			m_Ip;
@@ -167,7 +173,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		client->m_Tick = tick.tick();
 
 		printf("Receive NetMessage CNETMsg_Tick_t\n");
-		printf("Server tick:%i, host_computationtime: 0x%X, host_computationtime_std_deviation: 0x%x, host_framestarttime_std_deviation: 0x%X",
+		printf("Server tick:%i, host_computationtime: 0x%X, host_computationtime_std_deviation: 0x%x, host_framestarttime_std_deviation: 0x%X\n",
 			tick.tick(), tick.host_computationtime(), tick.host_computationtime_std_deviation(), tick.host_framestarttime_std_deviation());
 
 		return true;
@@ -196,7 +202,9 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 		client->m_SpawnCount = signonState.spawn_count();
 
-		if (signonState.signon_state() == SIGNONSTATE_NEW)
+		switch (signonState.signon_state())
+		{
+		case SIGNONSTATE_NEW:
 		{
 			//Send client info, or we gonna be kicked for using different send tables
 			CCLCMsg_ClientInfo_t info;
@@ -209,16 +217,27 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 			info.set_friends_name(client->m_NickName);
 
 			client->SendNetMessage(info);
-
-			//ack server with the same signonstate
 			client->SendNetMessage(signonState);
-
-			//Make our client spawn in server, after this, our state changed from spawning to active
-			//But it's not perfect, we've jumped a lot of process to reach this
-			client->SetSignonState(SIGNONSTATE_PRESPAWN, signonState.spawn_count());
-			client->SetSignonState(SIGNONSTATE_SPAWN, signonState.spawn_count());
+			break;
 		}
-
+		case SIGNONSTATE_PRESPAWN:
+		{
+			client->SendNetMessage(signonState);
+			client->SetSignonState(SIGNONSTATE_SPAWN, signonState.spawn_count());
+			break;
+		}
+		case SIGNONSTATE_SPAWN:
+		{
+			//client->SendNetMessage(signonState);
+			break;
+		}
+		case SIGNONSTATE_FULL:
+		{
+			//client->SendNetMessage(signonState);
+			break;
+		}
+		}
+		
 		return true;
 	}
 	case net_SetConVar:
@@ -240,29 +259,8 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CNETMsg_NOP_t nop;
 		nop.ReadFromBuffer(buf);
-
-		if (client->WaitingForMoreFragment(0))
-		{
-			thread_local int ackFrag = 0;
-			thread_local int numFrag = 0;
-
-			dataFragments_t* data = client->GetCurrentFragmentData(0);
-
-			//Ack data
-			if (ackFrag < data->ackedFragments)
-			{
-				client->ReplyFragmentAck();
-				ackFrag = data->ackedFragments;
-			}
-
-			//We've finished the fragments reading
-			if (ackFrag == data->numFragments && ackFrag)
-			{
-				ackFrag = 0;
-				data->numFragments = 0;
-			}
-
-		}
+		
+		
 		return true;
 	}
 	case net_Disconnect:
@@ -304,7 +302,15 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_ClassInfo_t classInfo;
 		classInfo.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_ClassInfo_t\n");
+		printf("Receive NetMessage CSVCMsg_ClassInfo_t, size: %u\n", classInfo.classes_size());
+
+		for (int i = 0; i < classInfo.classes_size(); i++)
+		{
+			const CSVCMsg_ClassInfo::class_t& svclass = classInfo.classes(i);
+			printf("Server class<datatable> : %s<%s>\n", 
+				svclass.class_name().c_str(), svclass.data_table_name().c_str());
+		}
+
 		return true;
 	}
 	case svc_SetPause:
@@ -428,8 +434,10 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	case svc_GameEvent:
 	{
 		CSVCMsg_GameEvent_t gameEvent;
-		gameEvent.ReadFromBuffer(buf);
+		gameEvent.ReadFromBuffer(buf); 
+
 		printf("Receive NetMessage CSVCMsg_GameEvent_t\n");
+		printf("Event:%s(%u)", gameEvent.event_name().c_str(), gameEvent.eventid());
 		return true;
 	}
 	case svc_PacketEntities:
@@ -766,9 +774,6 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 
 asio::awaitable<void> Client::SendDatagram(udp::socket& socket, udp::endpoint& remote_endpoint)
 {
-	if (m_Datageam.GetNumBytesWritten() <= 0)
-		co_return;
-
 	ResetWriteBuffer();
 	m_WriteBuf.WriteLong(m_nOutSequenceNr++); //out sequence
 	m_WriteBuf.WriteLong(m_nInSequenceNr); //In sequence
@@ -778,15 +783,7 @@ asio::awaitable<void> Client::SendDatagram(udp::socket& socket, udp::endpoint& r
 
 	int nCheckSumStart = m_WriteBuf.GetNumBytesWritten();
 
-	if (m_Datageam.GetNumBytesWritten() == 4 && *(int*)m_Datageam.GetData() == 0)
-	{
-		//Hack to write direct data 00 D7 3C FF 00 00 00 00
-		m_WriteBuf.WriteByte(0xFF);
-	}
-	else
-	{
-		m_WriteBuf.WriteByte(0); //InReliableState
-	}
+	m_WriteBuf.WriteByte(m_nInReliableState); //InReliableState
 
 	//Write datagram
 	m_WriteBuf.WriteBytes(m_Datageam.GetData(), m_Datageam.GetNumBytesWritten());
@@ -950,6 +947,9 @@ void Client::ProcessPacket(int packetSize)
 				}
 			}
 		}
+
+		// flip subChannel bit to signal successfull receiving
+		FLIPBIT(m_nInReliableState, bit);
 
 		for (i = 0; i < MAX_STREAMS; i++)
 		{
@@ -1157,8 +1157,8 @@ bool Client::ReadSubChannelData(bf_read& buf, int stream)
 	data->ackedFragments += numFragments;
 
 	//if (net_showfragments.GetBool())
-	printf("Received fragments: offset %i start %i, num %i, length:%i\n", offset, startFragment, numFragments, length);
-	printf("Total fragment needed: %i, received: %i\n", data->numFragments, data->ackedFragments);
+	//printf("Received fragments: offset %i start %i, num %i, length:%i\n", offset, startFragment, numFragments, length);
+	//printf("Total fragment needed: %i, received: %i\n", data->numFragments, data->ackedFragments);
 	return true;
 }
 
@@ -1184,8 +1184,25 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable)
 
 		if (!CNetMessageHandler::HandleNetMessageFromBuffer(this, buf, cmd))
 		{
-			printf("Error: Got unhandled message type %X Abort message process and drop the rest of the packet!\n", cmd);
-			break;
+			printf("Error: Got unhandled message type %X\n", cmd);
+
+			int size = buf.ReadVarInt32();
+			if (size < 0 || size > NET_MAX_PAYLOAD)
+			{
+				return false;
+			}
+
+			// Check its valid
+			if (size > buf.GetNumBytesLeft())
+			{
+				return false;
+			}
+
+			void* parseBuffer = stackalloc(size);
+			if (!buf.ReadBytes(parseBuffer, size))
+			{
+				return false;
+			}
 		}
 	}
 

@@ -1,4 +1,4 @@
-//========= Copyright © Valve Corporation, All rights reserved. ============//
+//========= Copyright ?Valve Corporation, All rights reserved. ============//
 #ifndef NETMESSAGES_SIGNON_HDR
 #define NETMESSAGES_SIGNON_HDR
 // When we integarte Yahn's CL 1791453 from dota, this will go back to network_connection.proto 

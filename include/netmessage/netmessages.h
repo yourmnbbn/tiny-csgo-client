@@ -8,7 +8,6 @@
 
 #include <inetmessage.h>
 #include <netmessages.pb.h>
-//#include "../common/utldelegate.h"
 
 //The interface in the hl2sdk is outdated, this is from the cstrike15_src
 #include "inetchannelinfo.h"
