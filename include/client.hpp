@@ -28,6 +28,7 @@
 #include "common/datafragments.h"
 #include "netmessage/netmessages_signon.h"
 #include "netmessage/netmessages.h"
+#include "netmessage/splitmessage.hpp"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -37,6 +38,7 @@ inline asio::io_context g_IoContext;
 
 constexpr int NET_CRYPT_KEY_LENGTH = 16;
 constexpr int NET_COMPRESSION_STACKBUF_SIZE = 4096;
+constexpr int NET_HEADER_FLAG_SPLITPACKET = -2;
 
 //TO DO: configure this through extern file.
 //You can get this value using st_crc plugin in tools
@@ -563,9 +565,8 @@ protected:
 			co_await SendRawDatagramBuffer(socket, remote_endpoint);
 
 			co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
-			size_t n = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
-
-			//TO DO : Process all other packets here
+			size_t length = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+			
 			ResetReadBuffer();
 
 			if (ReadBufferHeaderInt32() == -1)
@@ -576,7 +577,14 @@ protected:
 				continue;
 			}
 
-			ProcessPacket(n);
+			// Check for split message
+			if (ReadBufferHeaderInt32() == NET_HEADER_FLAG_SPLITPACKET)
+			{
+				if (!NET_GetLong(m_ReadBuf, length))
+					continue;
+			}
+
+			ProcessPacket(length);
 		}
 
 		co_return;
