@@ -5,9 +5,7 @@
 #pragma once
 #endif
 
-#include <iostream>
 #include <string>
-#include <format>
 #include <mutex>
 #include <vector>
 #include <ranges>
@@ -168,32 +166,32 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		tick.ReadFromBuffer(buf);
 		client->m_Tick = tick.tick();
 
-		std::cout << "Receive NetMessage CNETMsg_Tick_t\n";
-		std::cout << std::format("Server tick:{}, host_computationtime:{}, host_computationtime_std_deviation: {}, host_framestarttime_std_deviation: {}\n",
+		printf("Receive NetMessage CNETMsg_Tick_t\n");
+		printf("Server tick:%i, host_computationtime: 0x%X, host_computationtime_std_deviation: 0x%x, host_framestarttime_std_deviation: 0x%X",
 			tick.tick(), tick.host_computationtime(), tick.host_computationtime_std_deviation(), tick.host_framestarttime_std_deviation());
+
 		return true;
 	}
 	case net_StringCmd:
 	{
 		CNETMsg_StringCmd_t command("");
 		command.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_StringCmd_t\n";
+		printf("Receive NetMessage CNETMsg_StringCmd_t\n");
 		return true;
 	}
 	case net_PlayerAvatarData:
 	{
 		CNETMsg_PlayerAvatarData_t avatar;
 		avatar.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_PlayerAvatarData_t\n";
+		printf("Receive NetMessage CNETMsg_PlayerAvatarData_t\n");
 		return true;
 	}
 	case net_SignonState:
 	{
 		CNETMsg_SignonState_t signonState(SIGNONSTATE_NONE, -1);
 		signonState.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_SignonState_t\n";
-
-		std::cout << std::format("signon_state: {}, spawn_count: {}\n",
+		printf("Receive NetMessage CNETMsg_SignonState_t\n");
+		printf("signon_state: %u, spawn_count: %u\n",
 			signonState.signon_state(), signonState.spawn_count());
 
 		client->m_SpawnCount = signonState.spawn_count();
@@ -227,14 +225,13 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CNETMsg_SetConVar_t setConvar;
 		setConvar.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_SetConVar_t\n\n";
-
+		printf("Receive NetMessage CNETMsg_SetConVar_t\n\n");
 		//We don't actually have convar and NetMsgGetCVarUsingDictionary was removed from the souce
 		//so far we just simply print them
 		for (int i = 0; i < setConvar.convars().cvars_size(); i++)
 		{
 			auto cvar = setConvar.convars().cvars(i);
-			std::cout << std::format("{} {}\n", cvar.has_name() ? cvar.name() : "unknown cvar", cvar.value());
+			printf("%s %s\n", cvar.has_name() ? cvar.name().c_str() : "unknown cvar", cvar.value().c_str());
 		}
 
 		return true;
@@ -272,59 +269,59 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CNETMsg_Disconnect_t disconnect;
 		disconnect.ReadFromBuffer(buf);
-		std::cout << std::format("Disconnect from server : {}\n", disconnect.has_text() ? disconnect.text() : "unknown");
+		printf("Disconnect from server : %s\n", disconnect.has_text() ? disconnect.text().c_str() : "unknown");
 		return true;
 	}
 	case net_File:
 	{
 		CNETMsg_File_t file;
 		file.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_File_t\n";
+		printf("Receive NetMessage CNETMsg_File_t\n");
 		return true;
 	}
 	case net_SplitScreenUser:
 	{
 		CNETMsg_SplitScreenUser_t splitScreenUser;
 		splitScreenUser.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CNETMsg_SplitScreenUser_t\n";
+		printf("Receive NetMessage CNETMsg_SplitScreenUser_t\n");
 		return true;
 	}
 	case svc_ServerInfo:
 	{
 		CSVCMsg_ServerInfo_t info;
 		info.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_ServerInfo_t\n";
+		printf("Receive NetMessage CSVCMsg_ServerInfo_t\n");
 		return true;
 	}
 	case svc_SendTable:
 	{
 		CSVCMsg_SendTable_t sendTable;
 		sendTable.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_SendTable_t\n";
+		printf("Receive NetMessage CSVCMsg_SendTable_t\n");
 		return true;
 	}
 	case svc_ClassInfo:
 	{
 		CSVCMsg_ClassInfo_t classInfo;
 		classInfo.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_ClassInfo_t\n";
+		printf("Receive NetMessage CSVCMsg_ClassInfo_t\n");
 		return true;
 	}
 	case svc_SetPause:
 	{
 		CSVCMsg_SetPause_t setPause;
 		setPause.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_SetPause_t\n";
+		printf("Receive NetMessage CSVCMsg_SetPause_t\n");
 		return true;
 	}
 	case svc_CreateStringTable:
 	{
 		CSVCMsg_CreateStringTable_t createStringTable;
 		createStringTable.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_CreateStringTable_t\n";
+		printf("Receive NetMessage CSVCMsg_CreateStringTable_t\n");
 
-		std::cout << std::format("StringTable name: {}, max_entries: {}, user_data_size_bits: {}, flags: {}\n\n",
-			createStringTable.name(),
+		printf("StringTable name: %s, max_entries: %i, user_data_size_bits: %i, flags: %i\n\n",
+			createStringTable.name().c_str(),
 			createStringTable.max_entries(),
 			createStringTable.user_data_size_bits(),
 			createStringTable.flags());
@@ -335,21 +332,21 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_UpdateStringTable_t updateStringTable;
 		updateStringTable.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_UpdateStringTable_t\n";
+		printf("Receive NetMessage CSVCMsg_UpdateStringTable_t\n");
 		return true;
 	}
 	case svc_VoiceInit:
 	{
 		CSVCMsg_VoiceInit_t voiceInit;
 		voiceInit.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_VoiceInit_t\n";
+		printf("Receive NetMessage CSVCMsg_VoiceInit_t\n");
 		return true;
 	}
 	case svc_VoiceData:
 	{
 		CSVCMsg_VoiceData_t voiceData;
 		voiceData.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_VoiceData_t\n";
+		printf("Receive NetMessage CSVCMsg_VoiceData_t\n");
 		return true;
 	}
 	case svc_Print:
@@ -358,7 +355,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		print.ReadFromBuffer(buf);
 		if (print.has_text())
 		{
-			std::cout << print.text() << "\n";
+			printf("%s", print.text().c_str());
 		}
 		return true;
 	}
@@ -366,35 +363,35 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_Sounds_t sounds;
 		sounds.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_Sounds_t\n";
+		printf("Receive NetMessage CSVCMsg_Sounds_t\n");
 		return true;
 	}
 	case svc_SetView:
 	{
 		CSVCMsg_SetView_t setview;
 		setview.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_SetView_t\n";
+		printf("Receive NetMessage CSVCMsg_SetView_t\n");
 		return true;
 	}
 	case svc_FixAngle:
 	{
 		CSVCMsg_FixAngle_t fixAngle;
 		fixAngle.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_FixAngle_t\n";
+		printf("Receive NetMessage CSVCMsg_FixAngle_t\n");
 		return true;
 	}
 	case svc_CrosshairAngle:
 	{
 		CSVCMsg_CrosshairAngle_t crossHairAngle;
 		crossHairAngle.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_CrosshairAngle_t\n";
+		printf("Receive NetMessage CSVCMsg_CrosshairAngle_t\n");
 		return true;
 	}
 	case svc_BSPDecal:
 	{
 		CSVCMsg_BSPDecal_t bspDecal;
 		bspDecal.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_BSPDecal_t\n";
+		printf("Receive NetMessage CSVCMsg_BSPDecal_t\n");
 		return true;
 	}
 	break;
@@ -402,7 +399,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_SplitScreen_t splitScreen;
 		splitScreen.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_SplitScreen_t\n";
+		printf("Receive NetMessage CSVCMsg_SplitScreen_t\n");
 		return true;
 	}
 	case svc_UserMessage:
@@ -410,8 +407,8 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CSVCMsg_UserMessage_t userMsg;
 		userMsg.ReadFromBuffer(buf);
 
-		std::cout << "Receive NetMessage CSVCMsg_UserMessage_t\n";
-		std::cout << std::format("msg_type: {}, passthrough: {}, size: {}\n",
+		printf("Receive NetMessage CSVCMsg_UserMessage_t\n");
+		printf("msg_type: %i, passthrough: %i, size: %i\n",
 			userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
 
 		//After spawning in server, if we don't have communication, we'll be timed out.
@@ -425,63 +422,63 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_EntityMsg_t entityMsg;
 		entityMsg.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_EntityMessage_t\n";
+		printf("Receive NetMessage CSVCMsg_EntityMessage_t\n");
 		return true;
 	}
 	case svc_GameEvent:
 	{
 		CSVCMsg_GameEvent_t gameEvent;
 		gameEvent.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_GameEvent_t\n";
+		printf("Receive NetMessage CSVCMsg_GameEvent_t\n");
 		return true;
 	}
 	case svc_PacketEntities:
 	{
 		CSVCMsg_PacketEntities_t packetEntity;
 		packetEntity.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_PacketEntities_t\n";
+		printf("Receive NetMessage CSVCMsg_PacketEntities_t\n");
 		return true;
 	}
 	case svc_TempEntities:
 	{
 		CSVCMsg_TempEntities_t tempEntity;
 		tempEntity.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_TempEntities_t\n";
+		printf("Receive NetMessage CSVCMsg_TempEntities_t\n");
 		return true;
 	}
 	case svc_Prefetch:
 	{
 		CSVCMsg_Prefetch_t prefetch;
 		prefetch.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_Prefetch_t\n";
+		printf("Receive NetMessage CSVCMsg_Prefetch_t\n");
 		return true;
 	}
 	case svc_Menu:
 	{
 		CSVCMsg_Menu_t menu;
 		menu.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_Menu_t\n";
+		printf("Receive NetMessage CSVCMsg_Menu_t\n");
 		return true;
 	}
 	case svc_GameEventList:
 	{
 		CSVCMsg_GameEventList_t gameEventList;
 		gameEventList.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_GameEventList_t\n";
+		printf("Receive NetMessage CSVCMsg_GameEventList_t\n");
 		return true;
 	}
 	case svc_GetCvarValue:
 	{
 		CSVCMsg_GetCvarValue_t getCvarValue;
 		getCvarValue.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_GetCvarValue_t\n";
+		printf("Receive NetMessage CSVCMsg_GetCvarValue_t\n");
 		return true;
 	}
 	case svc_PaintmapData:
 	{
 		CSVCMsg_PaintmapData_t paintMap;
 		paintMap.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_PaintmapData_t\n";
+		printf("Receive NetMessage CSVCMsg_PaintmapData_t\n");
 		return true;
 	}
 	case svc_CmdKeyValues:
@@ -490,28 +487,28 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		kv.ReadFromBuffer(buf);
 
 		//Process kv here
-		std::cout << "Receive NetMessage CSVCMsg_CmdKeyValues_t\n";
+		printf("Receive NetMessage CSVCMsg_CmdKeyValues_t\n");
 		return true;
 	}
 	case svc_EncryptedData:
 	{
 		CSVCMsg_EncryptedData_t encryptData;
 		encryptData.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_EncryptedData_t\n";
+		printf("Receive NetMessage CSVCMsg_EncryptedData_t\n");
 		return true;
 	}
 	case svc_HltvReplay:
 	{
 		CSVCMsg_HltvReplay_t hltvReplay;
 		hltvReplay.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_HltvReplay_t\n";
+		printf("Receive NetMessage CSVCMsg_HltvReplay_t\n");
 		return true;
 	}
 	case svc_Broadcast_Command:
 	{
 		CSVCMsg_Broadcast_Command_t broadcastCmd;
 		broadcastCmd.ReadFromBuffer(buf);
-		std::cout << "Receive NetMessage CSVCMsg_Broadcast_Command_t\n";
+		printf("Receive NetMessage CSVCMsg_Broadcast_Command_t\n");
 		return true;
 	}
 	} //switch(type)
@@ -523,18 +520,18 @@ bool Client::PrepareSteamAPI()
 {
 	if (!SteamAPI_IsSteamRunning())
 	{
-		std::cout << "Steam is not running!\n";
+		printf("Steam is not running!\n");
 		return false;
 	}
 
 	if (!SteamAPI_Init())
 	{
-		std::cout << "Cannot initialize SteamAPI\n";
+		printf("Cannot initialize SteamAPI\n");
 		return false;
 	}
 	if (!SteamUser())
 	{
-		std::cout << "Cannot initialize ISteamUser interface\n";
+		printf("Cannot initialize ISteamUser interface\n");
 		return false;
 	}
 
@@ -572,8 +569,8 @@ void Client::InitCommandInput()
 
 asio::awaitable<void> Client::ConnectToServer()
 {
-	std::cout << std::format("Connecting to server {}:{}, using nickname {}, using password {}\n",
-		m_Ip, m_Port, m_NickName, m_PassWord);
+	printf("Connecting to server %s:%u, using nickname %s, using password %s\n",
+		m_Ip.c_str(), m_Port, m_NickName.c_str(), m_PassWord.c_str());
 
 	udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
 	auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
@@ -581,7 +578,7 @@ asio::awaitable<void> Client::ConnectToServer()
 	auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint, 0);
 	if (!success)
 	{
-		std::cout << "Connection failed after challenge response!\n";
+		printf("Connection failed after challenge response!\n");
 		co_return;
 	}
 	m_HostVersion = connect_proto_ver;
@@ -642,7 +639,7 @@ asio::awaitable<bool> Client::SendConnectPacket(
 		char err[256];
 		m_ReadBuf.ReadString(err, sizeof(err));
 
-		std::cout << std::format("Connection refused! - {}\n", err);
+		printf("Connection refused! - %s\n", err);
 		co_return false;
 
 	case S2C_CONNECTION:
@@ -651,7 +648,7 @@ asio::awaitable<bool> Client::SendConnectPacket(
 		co_return true;
 
 	default:
-		std::cout << std::format("Connection error! Got response header - {:#04x}\n", c);
+		printf("Connection error! Got response header - %u\n", c);
 		co_return false;
 	}
 
@@ -699,19 +696,19 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 		}
 		else if (StringHasPrefix(buf, "connect-lan-only"))
 		{
-			std::cout << "You cannot connect to this CS:GO server because it is restricted to LAN connections only.\n";
+			printf("You cannot connect to this CS:GO server because it is restricted to LAN connections only.\n");
 			co_return failed_obj;
 		}
 		else if (StringHasPrefix(buf, "connect-matchmaking-only"))
 		{
-			std::cout << "You must use matchmaking to connect to this CS:GO server.\n";
+			printf("You must use matchmaking to connect to this CS:GO server.\n");
 			co_return failed_obj;
 		}
 		//else if... don't cover other circumstances for now
 	}
 	else
 	{
-		std::cout << "Corrupted challenge response!\n";
+		printf("Corrupted challenge response!\n");
 		co_return failed_obj;
 	}
 
@@ -721,11 +718,11 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 	auto lobby_id = m_ReadBuf.ReadLongLong();
 	auto dcFriendsReqd = m_ReadBuf.ReadByte() != 0;
 	auto officialValveServer = m_ReadBuf.ReadByte() != 0;
+	
+	printf("Server using '%s' lobbies, requiring pw %s, lobby id %llx\n",
+		buf, require_pw ? "yes" : "no", lobby_id);
 
-	std::cout << std::format("Server using '{}' lobbies, requiring pw {}, lobby id {:#010x}\n",
-		buf, require_pw ? "yes" : "no", (uint64_t)lobby_id);
-
-	std::cout << std::format("Get server challenge number : {:#010x}, auth prorocol: {:#04x}, server steam: {}, vac {}, dcFriendsReqd {}, officialValveServer {}\n",
+	printf("Get server challenge number : 0x%X, auth prorocol: 0x%02X, server steam: %llu, vac %s, dcFriendsReqd %u, officialValveServer %u\n",
 		challenge, auth_protocol_version, server_steamid, vac ? "on" : "off", dcFriendsReqd, officialValveServer);
 
 	co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(true,
@@ -948,7 +945,7 @@ void Client::ProcessPacket(int packetSize)
 			{
 				if (!ReadSubChannelData(msg, i))
 				{
-					std::cout << "Error reading packet! stream " << i << "\n";
+					printf("Error reading packet! stream %i\n", i);
 					return; // error while reading fragments, drop whole packet
 				}
 			}
@@ -1226,11 +1223,11 @@ int Client::ProcessPacketHeader(bf_read& msg)
 	{
 		if (sequence == m_nInSequenceNr)
 		{
-			std::cout << std::format("duplicate packet {} at {}\n", sequence, m_nInSequenceNr);
+			printf("duplicate packet %u at %u\n", sequence, m_nInSequenceNr);
 		}
 		else
 		{
-			std::cout << std::format("out of order packet {} at {}\n", sequence, m_nInSequenceNr);
+			printf("out of order packet %u at %u\n", sequence, m_nInSequenceNr);
 		}
 
 		return -1;
@@ -1243,7 +1240,7 @@ int Client::ProcessPacketHeader(bf_read& msg)
 
 	if (m_PacketDrop > 0)
 	{
-		std::cout << std::format("Dropped {} packets at {}\n", m_PacketDrop, sequence);
+		printf("Dropped %u packets at %u\n", m_PacketDrop, sequence);
 	}
 
 	m_nInSequenceNr = sequence;
@@ -1357,7 +1354,7 @@ bool Client::BufferToBufferDecompress(char* dest, unsigned int& destLen, char* s
 
 inline void Client::ProcessConnectionlessPacket()
 {
-	std::cout << std::format("Get connectionless packet : {:#04x}\n", (uint8_t)m_ReadBuf.ReadByte());
+	printf("Get connectionless packet : %02X\n", m_ReadBuf.ReadByte());
 }
 
 inline bool Client::WaitingForMoreFragment(int stream)
