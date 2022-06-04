@@ -193,14 +193,26 @@ class Client
 				return true;
 			}
 			case svc_SendTable:
-
-				break;
+			{
+				CSVCMsg_SendTable_t sendTable;
+				sendTable.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_SendTable_t\n";
+				return true;
+			}
 			case svc_ClassInfo:
-
-				break;
+			{
+				CSVCMsg_ClassInfo_t classInfo;
+				classInfo.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_ClassInfo_t\n";
+				return true;
+			}
 			case svc_SetPause:
-
-				break;
+			{
+				CSVCMsg_SetPause_t setPause;
+				setPause.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_SetPause_t\n";
+				return true;
+			}
 			case svc_CreateStringTable:
 			{
 				CSVCMsg_CreateStringTable_t createStringTable;
@@ -212,19 +224,30 @@ class Client
 					createStringTable.max_entries(), 
 					createStringTable.user_data_size_bits(),
 					createStringTable.flags());
-
+				
 				return true;
 			}
-
 			case svc_UpdateStringTable:
-
-				break;
+			{
+				CSVCMsg_UpdateStringTable_t updateStringTable;
+				updateStringTable.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_UpdateStringTable_t\n";
+				return true;
+			}
 			case svc_VoiceInit:
-
-				break;
+			{
+				CSVCMsg_VoiceInit_t voiceInit;
+				voiceInit.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_VoiceInit_t\n";
+				return true;
+			}
 			case svc_VoiceData:
-
-				break;
+			{
+				CSVCMsg_VoiceData_t voiceData;
+				voiceData.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_VoiceData_t\n";
+				return true;
+			}
 			case svc_Print:
 			{
 				CSVCMsg_Print_t print;
@@ -235,25 +258,49 @@ class Client
 				}
 				return true;
 			}
-				
 			case svc_Sounds:
-
-				break;
+			{
+				CSVCMsg_Sounds_t sounds;
+				sounds.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_Sounds_t\n";
+				return true;
+			}
 			case svc_SetView:
-
-				break;
+			{
+				CSVCMsg_SetView_t setview;
+				setview.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_SetView_t\n";
+				return true;
+			}
 			case svc_FixAngle:
-
-				break;
+			{
+				CSVCMsg_FixAngle_t fixAngle;
+				fixAngle.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_FixAngle_t\n";
+				return true;
+			}
 			case svc_CrosshairAngle:
-
-				break;
+			{
+				CSVCMsg_CrosshairAngle_t crossHairAngle;
+				crossHairAngle.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_CrosshairAngle_t\n";
+				return true;
+			}
 			case svc_BSPDecal:
-
+			{
+				CSVCMsg_BSPDecal_t bspDecal;
+				bspDecal.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_BSPDecal_t\n";
+				return true;
+			}
 				break;
 			case svc_SplitScreen:
-
-				break;
+			{
+				CSVCMsg_SplitScreen_t splitScreen;
+				splitScreen.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_SplitScreen_t\n";
+				return true;
+			}
 			case svc_UserMessage:
 			{
 				CSVCMsg_UserMessage_t userMsg;
@@ -271,17 +318,33 @@ class Client
 				return true;
 			}
 			case svc_EntityMessage:
-
-				break;
+			{
+				CSVCMsg_EntityMsg_t entityMsg;
+				entityMsg.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_EntityMessage_t\n";
+				return true;
+			}
 			case svc_GameEvent:
-
-				break;
+			{
+				CSVCMsg_GameEvent_t gameEvent;
+				gameEvent.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_GameEvent_t\n";
+				return true;
+			}
 			case svc_PacketEntities:
-
-				break;
+			{
+				CSVCMsg_PacketEntities_t packetEntity;
+				packetEntity.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_PacketEntities_t\n";
+				return true;
+			}
 			case svc_TempEntities:
-
-				break;
+			{
+				CSVCMsg_TempEntities_t tempEntity;
+				tempEntity.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_TempEntities_t\n";
+				return true;
+			}
 			case svc_Prefetch:
 			{
 				CSVCMsg_Prefetch_t prefetch;
@@ -290,17 +353,33 @@ class Client
 				return true;
 			}
 			case svc_Menu:
-
-				break;
+			{
+				CSVCMsg_Menu_t menu;
+				menu.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_Menu_t\n";
+				return true;
+			}
 			case svc_GameEventList:
-
-				break;
+			{
+				CSVCMsg_GameEventList_t gameEventList;
+				gameEventList.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_GameEventList_t\n";
+				return true;
+			}
 			case svc_GetCvarValue:
-
-				break;
+			{
+				CSVCMsg_GetCvarValue_t getCvarValue;
+				getCvarValue.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_GetCvarValue_t\n";
+				return true;
+			}
 			case svc_PaintmapData:
-
-				break;
+			{
+				CSVCMsg_PaintmapData_t paintMap;
+				paintMap.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_PaintmapData_t\n";
+				return true;
+			}
 			case svc_CmdKeyValues:
 			{
 				CSVCMsg_CmdKeyValues_t kv;
@@ -311,18 +390,30 @@ class Client
 				return true;
 			}
 			case svc_EncryptedData:
-
-				break;
-			case svc_HltvReplay:
-
-				break;
-			case svc_Broadcast_Command:
-
-				break;
+			{
+				CSVCMsg_EncryptedData_t encryptData;
+				encryptData.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_EncryptedData_t\n";
+				return true;
 			}
+			case svc_HltvReplay:
+			{
+				CSVCMsg_HltvReplay_t hltvReplay;
+				hltvReplay.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_HltvReplay_t\n";
+				return true;
+			}
+			case svc_Broadcast_Command:
+			{
+				CSVCMsg_Broadcast_Command_t broadcastCmd;
+				broadcastCmd.ReadFromBuffer(buf);
+				std::cout << "Receive NetMessage CSVCMsg_Broadcast_Command_t\n";
+				return true;
+			}
+			} //switch(type)
 
 			return false;
-		}
+		} //static bool HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type)
 	};//class CNetMessageHandler
 
 public:
@@ -677,7 +768,7 @@ protected:
 
 			packetSize = uDecompressedSize;
 		}
-
+		
 		//PrintRecvBuffer(packetSize);
 		bf_read msg(m_Buf, packetSize);
 
@@ -937,25 +1028,8 @@ protected:
 			
 			if (!CNetMessageHandler::HandleNetMessageFromBuffer(this, buf, cmd))
 			{
-				printf("Got unhandle message type %X\n", cmd);
-				
-				//Read the message out of the buffer so we can continue reading the following messages
-				int size = buf.ReadVarInt32();
-				if (size < 0 || size > NET_MAX_PAYLOAD)
-				{
-					return false;
-				}
-
-				// Check its valid
-				if (size > buf.GetNumBytesLeft())
-				{
-					return false;
-				}
-				void* parseBuffer = stackalloc(size);
-				if (!buf.ReadBytes(parseBuffer, size))
-				{
-					return false;
-				}
+				printf("Error: Got unhandled message type %X Abort message process and drop the rest of the packet!\n", cmd);
+				break;
 			}
 		}
 
