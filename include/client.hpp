@@ -241,12 +241,12 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CNETMsg_SetConVar_t setConvar;
 		setConvar.ReadFromBuffer(buf);
 		printf("Receive NetMessage CNETMsg_SetConVar_t\n\n");
-		//We don't actually have convar and NetMsgGetCVarUsingDictionary was removed from the souce
-		//so far we just simply print them
+		
+		//We don't actually have convar, so far we just simply print them
 		for (int i = 0; i < setConvar.convars().cvars_size(); i++)
 		{
 			auto cvar = setConvar.convars().cvars(i);
-			printf("%s %s\n", cvar.has_name() ? cvar.name().c_str() : "unknown cvar", cvar.value().c_str());
+			printf("%s %s\n", NetMsgGetCVarUsingDictionary(cvar), cvar.value().c_str());
 		}
 
 		return true;
@@ -412,11 +412,6 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		printf("Receive NetMessage CSVCMsg_UserMessage_t\n");
 		printf("msg_type: %i, passthrough: %i, size: %i\n",
 			userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
-
-		//After spawning in server, if we don't have communication, we'll be timed out.
-		//So sending empty packet to server to stay alive.
-		CNETMsg_NOP_t nop;
-		client->SendNetMessage(nop);
 
 		return true;
 	}

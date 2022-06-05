@@ -48,7 +48,7 @@ public:
 		// If the read buffer is byte aligned, we can parse right out of it
 		if ((buffer.GetNumBitsRead() % 8) == 0)
 		{
-			bool parseResult = PB_OBJECT_TYPE::ParseFromArray(buffer.GetBasePointer() + buffer.GetNumBitsRead()/8, size);
+			bool parseResult = PB_OBJECT_TYPE::ParseFromArray(buffer.GetBasePointer() + buffer.GetNumBytesRead(), size);
 			buffer.SeekRelative(size * 8);
 			return parseResult;
 		}
@@ -245,9 +245,60 @@ public:
 	}
 	void AddToTail(const char* name, const char* value)
 	{
-		//NetMsgSetCVarUsingDictionary(mutable_convars()->add_cvars(), name, value);
+		NetMsgSetCVarUsingDictionary(mutable_convars()->add_cvars(), name, value);
 	}
 };
+
+//As long as we set the correct cvar name, there is no need to use dictionary
+inline void NetMsgSetCVarUsingDictionary(CMsg_CVars::CVar* convar, char const* name, char const* value)
+{
+	convar->set_value(value);
+	convar->set_name(name);
+}
+
+//This thing is easy to find in the binary, why hidding this valve?
+inline const char* NetMsgGetCVarUsingDictionary(CMsg_CVars::CVar const& convar)
+{
+	if (convar.has_name())
+		return convar.name().c_str();
+	switch (convar.dictionary_name())
+	{
+	case 0: return "";
+	case 1: return "accountid";
+	case 2: return "password";
+	case 3: return "cl_use_opens_buy_menu";
+	case 4: return "tv_nochat";
+	case 5: return "cl_clanid";
+	case 6: return "name";
+	case 7: return "cl_interp_ratio";
+	case 8: return "cl_predict";
+	case 9: return "cl_updaterate";
+	case 10: return "cl_session";
+	case 11: return "voice_loopback";
+	case 12: return "cl_lagcompensation";
+	case 13: return "cl_color";
+	case 14: return "cl_cmdrate";
+	case 15: return "net_maxroutable";
+	case 16: return "rate";
+	case 17: return "cl_predictweapons";
+	case 18: return "cl_autohelp";
+	case 19: return "cl_interp";
+	case 20: return "cl_autowepswitch";
+	case 21: return "cl_spec_mode";
+	case 22: return "tv_relay";
+	case 23: return "hltv_slots";
+	case 24: return "hltv_clients";
+	case 25: return "hltv_addr";
+	case 26: return "hltv_proxies";
+	case 27: return "sv_bot_difficulty_kbm";
+	case 28: return "hltv_sdr";
+	case 29: return "steamworks_sessionid_client";
+	case 30: return "sdr_routing";
+	default:
+		printf("Invalid dictionary entry for cvar # %d\n", convar.dictionary_name());
+		return "undefined";
+	}
+}
 
 typedef CNetMessagePB< net_NOP, CNETMsg_NOP >											CNETMsg_NOP_t;
 typedef CNetMessagePB< net_Disconnect, CNETMsg_Disconnect >								CNETMsg_Disconnect_t;
