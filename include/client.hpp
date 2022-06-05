@@ -89,7 +89,7 @@ private:
 	int							ProcessPacketHeader(bf_read& msg);
 	bool						CheckReceivingList(int nList);
 	bool						ReadSubChannelData(bf_read& buf, int stream);
-	bool						ProcessMessages(bf_read& buf, bool wasReliable);
+	bool						ProcessMessages(bf_read& buf, bool wasReliable, size_t length);
 	int							EncryptDatagram();
 	inline byte*				GetEncryptionKey();
 	void						UncompressFragments(dataFragments_t* data);
@@ -114,6 +114,7 @@ private:
 	inline void					SendRawDatagram(const void* data, size_t length) { m_RawDatagram.WriteBytes(data, length); }
 
 	//Utility functions
+	inline void					BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList);
 	inline void					ResetWriteBuffer(){ m_WriteBuf.Reset(); }
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
@@ -133,6 +134,7 @@ private:
 	int					m_HostVersion;
 	int					m_Tick;
 	int					m_SpawnCount;
+	uint64_t			m_nServerReservationCookie = 0;
 
 	//Net channel
 	int					m_nInSequenceNr = 0;
@@ -154,6 +156,11 @@ private:
 	//commandline
 	std::mutex					m_CommandVecLock;
 	std::vector<std::string>	m_VecCommand;
+
+	//Client cvar info
+	int					m_clUpdateRate = 128;
+	int					m_clCmdRate = 128;
+	int					m_clRate = 128000;
 };
 
 
@@ -179,6 +186,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CNETMsg_StringCmd_t command("");
 		command.ReadFromBuffer(buf);
 		printf("Receive NetMessage CNETMsg_StringCmd_t\n");
+		printf("Server wants to execute command %s", command.command().c_str());
 		return true;
 	}
 	case net_PlayerAvatarData:
@@ -220,6 +228,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		{
 			client->SendNetMessage(signonState);
 			client->SetSignonState(SIGNONSTATE_SPAWN, signonState.spawn_count());
+			//client->SetSignonState(SIGNONSTATE_FULL, signonState.spawn_count());
 			break;
 		}
 		case SIGNONSTATE_SPAWN:
@@ -241,7 +250,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CNETMsg_SetConVar_t setConvar;
 		setConvar.ReadFromBuffer(buf);
 		printf("Receive NetMessage CNETMsg_SetConVar_t\n\n");
-		
+
 		//We don't actually have convar, so far we just simply print them
 		for (int i = 0; i < setConvar.convars().cvars_size(); i++)
 		{
@@ -436,6 +445,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CSVCMsg_PacketEntities_t packetEntity;
 		packetEntity.ReadFromBuffer(buf);
 		printf("Receive NetMessage CSVCMsg_PacketEntities_t\n");
+
 		return true;
 	}
 	case svc_TempEntities:
@@ -471,6 +481,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CSVCMsg_GetCvarValue_t getCvarValue;
 		getCvarValue.ReadFromBuffer(buf);
 		printf("Receive NetMessage CSVCMsg_GetCvarValue_t\n");
+		printf("Server wants to get cvar <%s> value\n", getCvarValue.cvar_name().c_str());
 		return true;
 	}
 	case svc_PaintmapData:
@@ -603,11 +614,17 @@ asio::awaitable<bool> Client::SendConnectPacket(
 	m_WriteBuf.WriteLong(connect_proto_ver);
 	m_WriteBuf.WriteLong(auth_proto_version);
 	m_WriteBuf.WriteLong(challenge);
-	m_WriteBuf.WriteString(m_NickName.c_str());
+	m_WriteBuf.WriteString("");	//We send nickname by client info cvar
 	m_WriteBuf.WriteString(m_PassWord.c_str());
-	m_WriteBuf.WriteByte(0);
+	m_WriteBuf.WriteByte(1);	//numbers of players to connect, no spilt screen players
+
+	//Send main client information
+	CCLCMsg_SplitPlayerConnect_t splitMsg; 
+	BuildUserInfoUpdateMessage(*splitMsg.mutable_convars());
+	splitMsg.WriteToBuffer(m_WriteBuf);
+
 	m_WriteBuf.WriteOneBit(0); //low violence setting
-	m_WriteBuf.WriteLongLong(0); //reservation cookie
+	m_WriteBuf.WriteLongLong(m_nServerReservationCookie); //reservation cookie
 	m_WriteBuf.WriteByte(1); //platform
 
 	unsigned char steamkey[STEAM_KEYSIZE];
@@ -953,7 +970,7 @@ void Client::ProcessPacket(int packetSize)
 	if (msg.GetNumBitsLeft() > 0)
 	{
 		// parse and handle all messeges 
-		if (!ProcessMessages(msg, false))
+		if (!ProcessMessages(msg, false, packetSize))
 		{
 			return;	// disconnect or error
 		}
@@ -988,7 +1005,7 @@ bool Client::CheckReceivingList(int nList)
 	{
 		bf_read buffer(data->buffer, data->bytes);
 
-		if (!ProcessMessages(buffer, true)) // parse net message
+		if (!ProcessMessages(buffer, true, data->bytes)) // parse net message
 		{
 			return false; // stop reading any further
 		}
@@ -1153,7 +1170,7 @@ bool Client::ReadSubChannelData(bf_read& buf, int stream)
 	return true;
 }
 
-bool Client::ProcessMessages(bf_read& buf, bool wasReliable)
+bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 {
 	int startbit = buf.GetNumBitsRead();
 
@@ -1175,25 +1192,24 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable)
 
 		if (!CNetMessageHandler::HandleNetMessageFromBuffer(this, buf, cmd))
 		{
-			printf("Error: Got unhandled message type %X\n", cmd);
-
 			int size = buf.ReadVarInt32();
+			printf("Error: Got unhandled message type 0x%X\n", cmd);
+			//PrintRecvBuffer(length);
 			if (size < 0 || size > NET_MAX_PAYLOAD)
 			{
+				printf("Unknown message size %i exceed the limit %i\n", size, NET_MAX_PAYLOAD);
 				return false;
 			}
 
 			// Check its valid
 			if (size > buf.GetNumBytesLeft())
 			{
+				printf("Unknown message size(%i) greater than bytes left(%i) in the message, abort parsing\n", size, buf.GetNumBytesLeft());
 				return false;
 			}
 
-			void* parseBuffer = stackalloc(size);
-			if (!buf.ReadBytes(parseBuffer, size))
-			{
-				return false;
-			}
+			//Skip this unknown message
+			buf.SeekRelative(size * 8);
 		}
 	}
 
@@ -1214,11 +1230,11 @@ int Client::ProcessPacketHeader(bf_read& msg)
 	const void* pvData = msg.GetBasePointer() + nOffset;
 	unsigned short usDataCheckSum = BufferToShortChecksum(pvData, nCheckSumBytes);
 
-	//if (usDataCheckSum != usCheckSum)
-	//{
-	//	std::cout << std::format("corrupted packet {} at {}, crc check failed\n", sequence, m_nInSequenceNr);
-	//	return -1;
-	//}
+	if (usDataCheckSum != usCheckSum)
+	{
+		printf("corrupted packet %u at %u, crc check failed\n", sequence, m_nInSequenceNr);
+		return -1;
+	}
 
 	int relState = msg.ReadByte();	// reliable state of 8 subchannels
 	int nChoked = 0;	// read later if choked flag is set
@@ -1396,6 +1412,27 @@ inline void Client::PrintRecvBuffer(size_t bytes)
 		printf("%02X ", m_Buf[i] & 0xFF);
 	}
 	printf("\n\n");
+}
+
+inline void Client::BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList)
+{
+	char buf[256];
+	snprintf(buf, sizeof(buf), "%u", SteamUser()->GetSteamID().GetAccountID());
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "accountid", buf);
+	
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "name", m_NickName.c_str());
+
+	snprintf(buf, sizeof(buf), "%u", m_clUpdateRate);
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "cl_updaterate", buf);
+
+	snprintf(buf, sizeof(buf), "%u", m_clCmdRate);
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "cl_cmdrate", buf);
+
+	snprintf(buf, sizeof(buf), "%u", m_clRate);
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "rate", buf);
+
+	snprintf(buf, sizeof(buf), "$%llx", m_nServerReservationCookie);
+	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "cl_session", buf);
 }
 
 #endif // !__TINY_CSGO_CLIENT_HEADER__

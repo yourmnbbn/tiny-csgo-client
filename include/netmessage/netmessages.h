@@ -235,6 +235,13 @@ public:
 	}
 };
 
+//As long as we set the correct cvar name, there is no need to use dictionary
+inline void NetMsgSetCVarUsingDictionary(CMsg_CVars::CVar* convar, char const* name, char const* value)
+{
+	convar->set_value(value);
+	convar->set_name(name);
+}
+
 class CNETMsg_SetConVar_t : public CNetMessagePB< net_SetConVar, CNETMsg_SetConVar, INetChannelInfo::STRINGCMD >
 {
 public:
@@ -248,13 +255,6 @@ public:
 		NetMsgSetCVarUsingDictionary(mutable_convars()->add_cvars(), name, value);
 	}
 };
-
-//As long as we set the correct cvar name, there is no need to use dictionary
-inline void NetMsgSetCVarUsingDictionary(CMsg_CVars::CVar* convar, char const* name, char const* value)
-{
-	convar->set_value(value);
-	convar->set_name(name);
-}
 
 //This thing is easy to find in the binary, why hidding this valve?
 inline const char* NetMsgGetCVarUsingDictionary(CMsg_CVars::CVar const& convar)
