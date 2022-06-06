@@ -36,13 +36,13 @@ using namespace asio::ip;
 
 inline asio::io_context g_IoContext;
 
-constexpr int NET_CRYPT_KEY_LENGTH = 16;
-constexpr int NET_COMPRESSION_STACKBUF_SIZE = 4096;
-constexpr int NET_HEADER_FLAG_SPLITPACKET = -2;
+inline constexpr int NET_CRYPT_KEY_LENGTH = 16;
+inline constexpr int NET_COMPRESSION_STACKBUF_SIZE = 4096;
+inline constexpr int NET_HEADER_FLAG_SPLITPACKET = -2;
 
 //TO DO: configure this through extern file.
 //You can get this value using st_crc plugin in tools
-constexpr int SEND_TABLE_CRC32 = 0x3C17F0B1;
+inline constexpr int SEND_TABLE_CRC32 = 0x3C17F0B1;
 
 class Client
 {

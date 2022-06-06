@@ -7,14 +7,14 @@
 
 typedef void* FileHandle_t;
 
-constexpr int MAX_STREAMS = 2;
-constexpr int MAX_OSPATH = 260;
-constexpr int MAX_FILE_SIZE_BITS = 26;
-constexpr int FRAGMENT_BITS = 8;
-constexpr int FRAGMENT_SIZE = (1 << FRAGMENT_BITS);
-constexpr int NET_MAX_PAYLOAD_BITS = 18;
-constexpr int MAX_FILE_SIZE = ((1 << MAX_FILE_SIZE_BITS) - 1);
-constexpr auto FILESYSTEM_INVALID_HANDLE = (FileHandle_t)nullptr;
+inline constexpr int MAX_STREAMS = 2;
+inline constexpr int MAX_OSPATH = 260;
+inline constexpr int MAX_FILE_SIZE_BITS = 26;
+inline constexpr int FRAGMENT_BITS = 8;
+inline constexpr int FRAGMENT_SIZE = (1 << FRAGMENT_BITS);
+inline constexpr int NET_MAX_PAYLOAD_BITS = 18;
+inline constexpr int MAX_FILE_SIZE = ((1 << MAX_FILE_SIZE_BITS) - 1);
+inline constexpr auto FILESYSTEM_INVALID_HANDLE = (FileHandle_t)nullptr;
 
 typedef struct dataFragments_s
 {
