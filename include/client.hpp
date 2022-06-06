@@ -44,6 +44,9 @@ inline constexpr int NET_HEADER_FLAG_SPLITPACKET = -2;
 //You can get this value using st_crc plugin in tools
 inline constexpr int SEND_TABLE_CRC32 = 0x3C17F0B1;
 
+//Max retry limitation when connection failed at some point
+inline constexpr int CONFIG_MAX_RETRY_LIMIT = 30;
+
 class Client
 {
 	//For handling netmessages
@@ -75,6 +78,8 @@ public:
 private:
 	//Networking
 	asio::awaitable<void>		ConnectToServer();
+	asio::awaitable<bool>		RetryServer(udp::socket& socket, udp::endpoint& remote_endpoint);
+	asio::awaitable<bool>		StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint, bool isRetry = false);
 	asio::awaitable<bool>		SendConnectPacket(udp::socket& socket, udp::endpoint& remote_endpoint, uint32_t challenge, uint32_t auth_proto_version, uint32_t connect_proto_ver);
 	asio::awaitable<void>		HandleIncomingPacket(udp::socket& socket, udp::endpoint& remote_endpoint);
 	asio::awaitable<void>		SendDatagram(udp::socket& socket, udp::endpoint& remote_endpoint);
@@ -102,6 +107,7 @@ private:
 	inline void					SendNetMessage(INetMessage& msg) { msg.WriteToBuffer(m_Datageam); }
 	inline void					SendNetMessage(INetMessage&& msg) { msg.WriteToBuffer(m_Datageam); }
 	void						SendStringCommand(std::string& command);
+	inline void					Disconnect(const char* reason = "Disconnect.") { SendNetMessage(CNETMsg_Disconnect_t(reason)); }
 
 	// Write direct bytes to the datagram instead of using INetMessage::ReadFromBuffer
 	// CRC check required
@@ -115,6 +121,7 @@ private:
 
 	//Utility functions
 	inline void					BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList);
+	inline void					ClearNetchannelInfo();
 	inline void					ResetWriteBuffer(){ m_WriteBuf.Reset(); }
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
@@ -134,6 +141,8 @@ private:
 	int					m_HostVersion;
 	int					m_Tick;
 	int					m_SpawnCount;
+	int					m_ServerChallenge = 0;
+	int					m_AuthProtocol = 0;
 	uint64_t			m_nServerReservationCookie = 0;
 
 	//Net channel
@@ -161,6 +170,10 @@ private:
 	int					m_clUpdateRate = 128;
 	int					m_clCmdRate = 128;
 	int					m_clRate = 128000;
+
+	//Flags
+	bool				m_flagRetry = false;
+	bool				m_flagWaitForDisconnect = false;
 };
 
 
@@ -273,6 +286,14 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		CNETMsg_Disconnect_t disconnect;
 		disconnect.ReadFromBuffer(buf);
 		printf("Disconnect from server : %s\n", disconnect.has_text() ? disconnect.text().c_str() : "unknown");
+
+		//We wait untill receiving the last packet from the server, then to retry
+		if (client->m_flagWaitForDisconnect)
+		{
+			client->m_flagWaitForDisconnect = false;
+			client->m_flagRetry = true;
+		}
+
 		return true;
 	}
 	case net_File:
@@ -585,20 +606,61 @@ asio::awaitable<void> Client::ConnectToServer()
 	udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
 	auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
 
-	auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint, 0);
-	if (!success)
+	co_await StartConnectProcess(socket, remote_endpoint);
+}
+
+asio::awaitable<bool> Client::RetryServer(udp::socket& socket, udp::endpoint& remote_endpoint)
+{
+	//Clrear netchannel information
+	ClearNetchannelInfo();
+	
+	printf("Retrying to server %s:%u, using nickname %s, using password %s\n",
+		m_Ip.c_str(), m_Port, m_NickName.c_str(), m_PassWord.c_str());
+
+	co_return co_await StartConnectProcess(socket, remote_endpoint, true);
+}
+
+asio::awaitable<bool> Client::StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint, bool isRetry)
+{
+	int challenge_retry = 0;
+
+	while (true)
 	{
-		printf("Connection failed after challenge response!\n");
-		co_return;
+		auto [success, challenge, auth_proto_ver, connect_proto_ver] = co_await GetChallenge(socket, remote_endpoint, m_ServerChallenge);
+		if (success)
+		{
+			m_HostVersion = connect_proto_ver;
+			m_ServerChallenge = challenge;
+			m_AuthProtocol = auth_proto_ver;
+			break;
+		}
+
+		printf("Connection failed after challenge response! retry...(#%i)\n", ++challenge_retry);
+
+		if (challenge_retry > CONFIG_MAX_RETRY_LIMIT)
+		{
+			printf("Error: Max retry limit(%i) exceeded\n", CONFIG_MAX_RETRY_LIMIT);
+			co_return false;
+		}
 	}
-	m_HostVersion = connect_proto_ver;
 
-	if (!(co_await SendConnectPacket(socket, remote_endpoint, challenge, auth_proto_ver, connect_proto_ver)))
-		co_return;
+	int auth_retry = 0;
+	while (!(co_await SendConnectPacket(socket, remote_endpoint, m_ServerChallenge, m_AuthProtocol, m_HostVersion)))
+	{
+		printf("Authentication failed! retry...(#%i)\n ", ++auth_retry);
 
-	co_await HandleIncomingPacket(socket, remote_endpoint);
-
-	co_return;
+		if (auth_retry > CONFIG_MAX_RETRY_LIMIT)
+		{
+			printf("Error: Max retry limit(%i) exceeded\n", CONFIG_MAX_RETRY_LIMIT);
+			co_return false;
+		}
+	}
+	
+	//If it's a retry connect, don't call this because we only have one running and suspended, will be resumed when return true
+	if(!isRetry)
+		co_await HandleIncomingPacket(socket, remote_endpoint);
+	
+	co_return true;
 }
 
 asio::awaitable<bool> Client::SendConnectPacket(
@@ -643,7 +705,7 @@ asio::awaitable<bool> Client::SendConnectPacket(
 	//Wait for connect response, TO DO: add timeout support
 	co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 	co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
-
+	
 	ResetReadBuffer();
 	if (m_ReadBuf.ReadLong() != -1)
 		co_return false;
@@ -750,6 +812,18 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 	//Process all incoming packet here after we established connection.
 	while (true)
 	{
+		//Suspend packet receiving here for a retry, resume when successfully retrying server
+		//HandleIncomingPacket will not be called again if it's a retry
+		if (m_flagRetry)
+		{
+			if (!(co_await RetryServer(socket, remote_endpoint)))
+			{
+				printf("Retrying server failed! \n");
+				co_return;
+			}
+			m_flagRetry = false;
+		}
+
 		HandleStringCommand();
 		co_await SendDatagram(socket, remote_endpoint);
 		co_await SendRawDatagramBuffer(socket, remote_endpoint);
@@ -1280,9 +1354,12 @@ void Client::SendStringCommand(std::string& command)
 
 	if (command == "disconnect")
 	{
-		CNETMsg_Disconnect_t disconnect;
-		disconnect.set_text("Disconnect.");
-		SendNetMessage(disconnect);
+		Disconnect();
+	}
+	else if (command == "retry")
+	{
+		m_flagWaitForDisconnect = true;
+		Disconnect();
 	}
 }
 
@@ -1433,6 +1510,16 @@ inline void Client::BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList)
 
 	snprintf(buf, sizeof(buf), "$%llx", m_nServerReservationCookie);
 	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "cl_session", buf);
+}
+
+inline void Client::ClearNetchannelInfo()
+{
+	m_nInSequenceNr = 0;
+	m_nOutSequenceNr = 1;
+	m_nOutSequenceNrAck = 0;
+	m_PacketDrop = 0;
+	m_nInReliableState = 0;
+	m_nOutReliableState = 0;
 }
 
 #endif // !__TINY_CSGO_CLIENT_HEADER__

@@ -299,9 +299,17 @@ inline const char* NetMsgGetCVarUsingDictionary(CMsg_CVars::CVar const& convar)
 		return "undefined";
 	}
 }
+class CNETMsg_Disconnect_t : public CNetMessagePB< net_Disconnect, CNETMsg_Disconnect >
+{
+public:
+	CNETMsg_Disconnect_t(){}
+	CNETMsg_Disconnect_t(const char* reason)
+	{
+		set_text(reason);
+	}
+};
 
 typedef CNetMessagePB< net_NOP, CNETMsg_NOP >											CNETMsg_NOP_t;
-typedef CNetMessagePB< net_Disconnect, CNETMsg_Disconnect >								CNETMsg_Disconnect_t;
 typedef CNetMessagePB< net_File, CNETMsg_File >											CNETMsg_File_t;
 typedef CNetMessagePB< net_SplitScreenUser, CNETMsg_SplitScreenUser >					CNETMsg_SplitScreenUser_t;
 
