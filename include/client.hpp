@@ -21,6 +21,8 @@
 #include <utlmemory.h>
 #include <lzss.h>
 #include <vstdlib/random.h>
+#include <utlbuffer.h>
+#include <KeyValues.h>
 
 #include "common/proto_oob.h"
 #include "common/protocol.h"
@@ -53,7 +55,12 @@ class Client
 	class CNetMessageHandler
 	{
 	public:
-		static bool HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type);
+		static bool				HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type);
+
+		//Print keyvalues as string
+		static void				RecursivePrintKeyValues(KeyValues* kv, int indentLevel);
+		static void				PrintConvertedString(const char* pszString);
+		inline static void		WriteIndents(int indentLevel);
 	};
 
 public:
@@ -177,6 +184,164 @@ private:
 };
 
 
+
+void Client::CNetMessageHandler::RecursivePrintKeyValues(KeyValues* kv, int indentLevel)
+{
+	// write header
+	WriteIndents(indentLevel);
+	printf("\"");
+	PrintConvertedString(kv->GetName());
+	printf("\"\n");
+	WriteIndents(indentLevel);
+	printf("{\n");
+	
+	// loop through all our keys writing them to disk
+	for (KeyValues* dat = kv->GetFirstSubKey(); dat != NULL; dat = dat->GetNextKey())
+	{
+		if (dat->GetFirstSubKey())
+		{
+			RecursivePrintKeyValues(dat, indentLevel + 1);
+		}
+		else
+		{
+			// only write non-empty keys
+
+			switch (dat->GetDataType())
+			{
+			case KeyValues::TYPE_STRING:
+			{
+				if (dat->GetString() && *(dat->GetString()))
+				{
+					WriteIndents(indentLevel + 1);
+					printf("\"");
+					PrintConvertedString(dat->GetName());
+					printf("\"\t\t\"");
+
+					PrintConvertedString(dat->GetString());
+
+					printf("\"\n");
+				}
+				break;
+			}
+			case KeyValues::TYPE_WSTRING:
+			{
+#ifdef _WIN32
+				if (dat->GetWString())
+				{
+					constexpr auto KEYVALUES_TOKEN_SIZE = 1024;
+					static char buf[KEYVALUES_TOKEN_SIZE];
+					// make sure we have enough space
+					Assert(::WideCharToMultiByte(CP_UTF8, 0, dat->GetWString(), -1, NULL, 0, NULL, NULL) < KEYVALUES_TOKEN_SIZE);
+					int result = ::WideCharToMultiByte(CP_UTF8, 0, dat->GetWString(), -1, buf, KEYVALUES_TOKEN_SIZE, NULL, NULL);
+					if (result)
+					{
+						WriteIndents(indentLevel + 1);
+						printf("\"");
+						printf(dat->GetName());
+						printf("\"\t\t\"");
+
+						PrintConvertedString(buf);
+
+						printf("\"\n");
+					}
+				}
+#endif
+				break;
+			}
+
+			case KeyValues::TYPE_INT:
+			{
+				WriteIndents(indentLevel + 1);
+				printf("\"");
+				printf(dat->GetName());
+				printf("\"\t\t\"");
+
+				char buf[32];
+				Q_snprintf(buf, sizeof(buf), "%d", dat->GetInt());
+
+				printf(buf);
+				printf("\"\n");
+				break;
+			}
+
+			case KeyValues::TYPE_UINT64:
+			{
+				WriteIndents(indentLevel + 1);
+				printf("\"");
+				printf(dat->GetName());
+				printf("\"\t\t\"");
+
+				char buf[32];
+				// write "0x" + 16 char 0-padded hex encoded 64 bit value
+				Q_snprintf(buf, sizeof(buf), "0x%016llX", *((uint64*)dat->GetString()));
+
+				printf(buf);
+				printf("\"\n");
+				break;
+			}
+
+			case KeyValues::TYPE_FLOAT:
+			{
+				WriteIndents(indentLevel + 1);
+				printf("\"");
+				printf(dat->GetName());
+				printf("\"\t\t\"");
+
+				char buf[48];
+				Q_snprintf(buf, sizeof(buf), "%f", dat->GetFloat());
+
+				printf(buf, Q_strlen(buf));
+				printf("\"\n");
+				break;
+			}
+			case KeyValues::TYPE_COLOR:
+				printf("Client::CNetMessageHandler::RecursivePrintKeyValues TODO, missing code for TYPE_COLOR.\n");
+				break;
+
+			default:
+				break;
+			}
+		}
+	}
+
+	// write tail
+	WriteIndents(indentLevel);
+	printf("}\n");
+}
+
+void Client::CNetMessageHandler::PrintConvertedString(const char* pszString)
+{
+	// handle double quote chars within the string
+	// the worst possible case is that the whole string is quotes
+	int len = Q_strlen(pszString);
+	char* convertedString = (char*)_alloca((len + 1) * sizeof(char) * 2);
+	int j = 0;
+	for (int i = 0; i <= len; i++)
+	{
+		if (pszString[i] == '\"')
+		{
+			convertedString[j] = '\\';
+			j++;
+		}
+		else if (pszString[i] == '\\')
+		{
+			convertedString[j] = '\\';
+			j++;
+		}
+		convertedString[j] = pszString[i];
+		j++;
+	}
+
+	printf(convertedString);
+}
+
+void Client::CNetMessageHandler::WriteIndents(int indentLevel)
+{
+	for (int i = 0; i < indentLevel; i++)
+	{
+		printf("\t");
+	}
+}
 
 bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type)
 {
@@ -516,9 +681,20 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_CmdKeyValues_t kv;
 		kv.ReadFromBuffer(buf);
+		printf("Receive NetMessage CSVCMsg_CmdKeyValues_t, print as string:\n\n");
 
-		//Process kv here
-		printf("Receive NetMessage CSVCMsg_CmdKeyValues_t\n");
+		//We don't actually handle these keyvalues, so we just read and print them.
+		KeyValues* pMsgKeyValues = new KeyValues("");
+		KeyValues::AutoDelete autodelete_pMsgKeyValues(pMsgKeyValues);
+
+		const std::string& msgStr = kv.keyvalues();
+		int numBytes = msgStr.size();
+
+		CUtlBuffer bufRead(msgStr.data(), numBytes, CUtlBuffer::READ_ONLY);
+		CUtlBuffer bufWrite;
+		pMsgKeyValues->ReadAsBinary(bufRead);
+		RecursivePrintKeyValues(pMsgKeyValues, 0);
+
 		return true;
 	}
 	case svc_EncryptedData:
@@ -532,7 +708,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_HltvReplay_t hltvReplay;
 		hltvReplay.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_HltvReplay_t\n");
+		printf("Receive NetMessage CSVCMsg_HltvReplay_t delay:%s\n", hltvReplay.delay() ? "replay" : "real-time");
 		return true;
 	}
 	case svc_Broadcast_Command:
