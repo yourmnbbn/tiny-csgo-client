@@ -31,6 +31,7 @@
 #include "netmessage/netmessages.h"
 #include "netmessage/splitmessage.hpp"
 #include "netmessage/subchannel.hpp"
+#include "netmessage/usermsghandler.hpp"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -132,7 +133,7 @@ private:
 	inline void					ResetWriteBuffer(){ m_WriteBuf.Reset(); }
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
-	inline void					PrintRecvBuffer(size_t bytes);
+	inline void					PrintRecvBuffer(const char* buf, size_t bytes);
 
 private:
 	//Bitbuf for reading and writing data
@@ -603,10 +604,13 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 	{
 		CSVCMsg_UserMessage_t userMsg;
 		userMsg.ReadFromBuffer(buf);
-
-		printf("Receive NetMessage CSVCMsg_UserMessage_t\n");
-		printf("msg_type: %i, passthrough: %i, size: %i\n",
-			userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
+		
+		if (!CUserMsgHandler::HandleUserMessage(userMsg.msg_type(), userMsg.msg_data().c_str(), userMsg.msg_data().size())) 
+		{
+			printf("Receive NetMessage CSVCMsg_UserMessage_t\n");
+			printf("Unhandled usermessage msg_type: %i, passthrough: %i, size: %i\n",
+				userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
+		}
 
 		return true;
 	}
@@ -1444,7 +1448,7 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 		{
 			int size = buf.ReadVarInt32();
 			printf("Error: Got unhandled message type 0x%X\n", cmd);
-			//PrintRecvBuffer(length);
+			//PrintRecvBuffer((char*)buf.GetBasePointer(), length);
 			if (size < 0 || size > NET_MAX_PAYLOAD)
 			{
 				printf("Unknown message size %i exceed the limit %i\n", size, NET_MAX_PAYLOAD);
@@ -1658,11 +1662,11 @@ inline unsigned short Client::BufferToShortChecksum(const void* pvData, size_t n
 	return (unsigned short)(lowpart ^ highpart);
 }
 
-inline void Client::PrintRecvBuffer(size_t bytes)
+inline void Client::PrintRecvBuffer(const char* buf, size_t bytes)
 {
 	for (size_t i = 0; i < bytes; i++)
 	{
-		printf("%02X ", m_Buf[i] & 0xFF);
+		printf("%02X ", buf[i] & 0xFF);
 	}
 	printf("\n\n");
 }
