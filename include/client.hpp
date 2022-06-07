@@ -607,8 +607,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		
 		if (!CUserMsgHandler::HandleUserMessage(userMsg.msg_type(), userMsg.msg_data().c_str(), userMsg.msg_data().size())) 
 		{
-			printf("Receive NetMessage CSVCMsg_UserMessage_t\n");
-			printf("Unhandled usermessage msg_type: %i, passthrough: %i, size: %i\n",
+			printf("Unhandled CSVCMsg_UserMessage_t msg_type: %i, passthrough: %i, size: %i\n",
 				userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
 		}
 
