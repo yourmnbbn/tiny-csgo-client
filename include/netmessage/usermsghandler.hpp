@@ -42,6 +42,13 @@ bool CUserMsgHandler::HandleUserMessage(int msgType, const void* data, size_t le
 		}
 		return true;
 	}
+	case CS_UM_SayText:
+	{
+		auto sayText = usermsg_cast<CCSUsrMsg_SayText>(data, length);
+		int client = sayText.ent_idx();
+		printf("SayText: <Client %d> %s\n", client, sayText.text().c_str());
+		return true;
+	}
 	case CS_UM_SayText2:
 	{
 		auto sayText2 = usermsg_cast<CCSUsrMsg_SayText2>(data, length);
@@ -60,6 +67,18 @@ bool CUserMsgHandler::HandleUserMessage(int msgType, const void* data, size_t le
 				printf("%s\n", textMsg.params(i).c_str());
 		}
 		return true;
+	}
+	case CS_UM_ShowMenu: //For handling sourcemod menu
+	{
+		auto menu = usermsg_cast<CCSUsrMsg_ShowMenu>(data, length);
+		int displayTime = menu.display_time();
+		int bitsValidSlots = menu.bits_valid_slots();
+		
+		if (bitsValidSlots)
+		{
+			printf("ShowMenu<time: %ds> \n%s\n", displayTime, menu.menu_string().c_str());
+		}
+
 	}
 	case CS_UM_ProcessSpottedEntityUpdate:
 	{
