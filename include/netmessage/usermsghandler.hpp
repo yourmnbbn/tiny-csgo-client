@@ -46,10 +46,8 @@ bool CUserMsgHandler::HandleUserMessage(int msgType, const void* data, size_t le
 	{
 		auto sayText2 = usermsg_cast<CCSUsrMsg_SayText2>(data, length);
 		int client = sayText2.ent_idx();
-		printf("Receive CCSUsrMsg_SayText2\n");
-		//Untested, may have encoding issue or parameter mismatch
-		printf("%s<%d> [%s]: %s\n", 
-			sayText2.params(0).c_str(), client, sayText2.params(1).c_str(), sayText2.params(2).c_str());
+		printf("SayText2 : name: %s %s<Client %d>\n", 
+			sayText2.msg_name().c_str(), sayText2.params(0).c_str(), client);
 		return true;
 	}
 	case CS_UM_TextMsg:
