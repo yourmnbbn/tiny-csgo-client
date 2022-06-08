@@ -109,6 +109,7 @@ private:
 	bool						BufferToBufferDecompress(char* dest, unsigned int& destLen, char* source, unsigned int sourceLen);
 	inline void					ProcessConnectionlessPacket();
 	inline unsigned short		BufferToShortChecksum(const void* pvData, size_t nLength);
+	inline void					DecodeFragments(void* pvData, size_t nLength);
 
 	//Net messages sending and wrapping
 	inline void					SetSignonState(int state, int count) { SendNetMessage(CNETMsg_SignonState_t(state, count)); }
@@ -133,7 +134,7 @@ private:
 	inline void					ResetWriteBuffer(){ m_WriteBuf.Reset(); }
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
-	inline void					PrintRecvBuffer(const char* buf, size_t bytes);
+	inline void					PrintRecvBuffer(const char* buf, size_t bytes, bool escapedString = false);
 
 private:
 	//Bitbuf for reading and writing data
@@ -1253,6 +1254,13 @@ bool Client::CheckReceivingList(int nList)
 	{
 		UncompressFragments(data);
 	}
+	else
+	{
+		//FIX ME!!!
+		//Although this could let us read more messages, but still some of the message is broken.
+		//But at least we can handle the server changelevel and some saytext.
+		DecodeFragments(data->buffer, data->bytes);
+	}
 
 	if (!data->filename[0])
 	{
@@ -1426,7 +1434,7 @@ bool Client::ReadSubChannelData(bf_read& buf, int stream)
 bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 {
 	int startbit = buf.GetNumBitsRead();
-
+	
 	while (true)
 	{
 		if (buf.IsOverflowed())
@@ -1442,12 +1450,13 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 		}
 
 		unsigned char cmd = buf.ReadVarInt32();
-
+		
 		if (!CNetMessageHandler::HandleNetMessageFromBuffer(this, buf, cmd))
 		{
+			//Is there any chance that unreliable data could be encoded? 
 			int size = buf.ReadVarInt32();
 			printf("Error: Got unhandled message type 0x%X\n", cmd);
-			//PrintRecvBuffer((char*)buf.GetBasePointer(), length);
+			//PrintRecvBuffer((char*)buf.GetBasePointer() + startbit / 8, length, false);
 			if (size < 0 || size > NET_MAX_PAYLOAD)
 			{
 				printf("Unknown message size %i exceed the limit %i\n", size, NET_MAX_PAYLOAD);
@@ -1467,6 +1476,17 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 	}
 
 	return true;
+}
+
+void Client::DecodeFragments(void* pvData, size_t nLength)
+{
+	uint8_t* data = reinterpret_cast<uint8_t*>(pvData);
+	for (size_t i = 0; i < nLength; i++)
+	{
+		uint8_t encoded = data[i];
+		uint8_t mod = encoded % 4;
+		data[i] = mod ? ((1 << (5 + mod)) + (encoded - mod) / 4) : (encoded / 4);
+	}
 }
 
 int Client::ProcessPacketHeader(bf_read& msg)
@@ -1661,11 +1681,11 @@ inline unsigned short Client::BufferToShortChecksum(const void* pvData, size_t n
 	return (unsigned short)(lowpart ^ highpart);
 }
 
-inline void Client::PrintRecvBuffer(const char* buf, size_t bytes)
+inline void Client::PrintRecvBuffer(const char* buf, size_t bytes, bool escapedString)
 {
 	for (size_t i = 0; i < bytes; i++)
 	{
-		printf("%02X ", buf[i] & 0xFF);
+		printf("%s%02X", escapedString ? "\\x" : " ", buf[i] & 0xFF);
 	}
 	printf("\n\n");
 }
