@@ -388,6 +388,12 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 		switch (signonState.signon_state())
 		{
+		case SIGNONSTATE_CONNECTED:
+		{
+			//Server is telling us to reconnect
+			client->SendNetMessage(signonState);
+			break;
+		}
 		case SIGNONSTATE_NEW:
 		{
 			//Send client info, or we gonna be kicked for using different send tables
@@ -419,6 +425,11 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		case SIGNONSTATE_FULL:
 		{
 			//client->SendNetMessage(signonState);
+			break;
+		}
+		case SIGNONSTATE_CHANGELEVEL:
+		{
+			printf("Server changelevel... Map:%s\n", signonState.map_name().c_str());
 			break;
 		}
 		}
