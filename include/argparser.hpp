@@ -132,7 +132,8 @@ public:
 			if (strValue.starts_with("0x") || strValue.starts_with("0X"))
 			{
 				for (char& ch : strValue)
-					ch = std::tolower(ch);
+					if (ch >= 'A' && ch <= 'Z')
+						ch = std::tolower(ch);
 
 				sscanf(strValue.c_str(), "0x%llx", &value);
 			}
