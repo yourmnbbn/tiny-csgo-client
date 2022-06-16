@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <optional>
+#include <stdexcept>
 
 // Simple commandline argument parser for tiny csgo client, with strict option type check
 
@@ -70,13 +71,13 @@ public:
 	{
 		if (m_Options.empty())
 		{
-			throw std::exception("Please add options before parsing them");
+			throw std::logic_error("Please add options before parsing them");
 		}
 
 		if (argc <= 1)
 		{
 			PrintOptions();
-			throw std::exception("Please add the required parameter to run the program!");
+			throw std::logic_error("Please add the required parameter to run the program!");
 		}
 
 		//Parse argument
@@ -98,7 +99,7 @@ public:
 				if (i == argc - 1)
 				{
 					snprintf(m_ErrorMsg, sizeof(m_ErrorMsg), "Argument %s need a value but found nothing!", option.name.c_str());
-					throw std::exception(m_ErrorMsg);
+					throw std::logic_error(m_ErrorMsg);
 				}
 
 				option.value = argv[++i];
@@ -113,7 +114,7 @@ public:
 			{
 				PrintOptions();
 				snprintf(m_ErrorMsg, sizeof(m_ErrorMsg), "Option \"%s\" is required but not found!", opt.name.c_str());
-				throw std::exception(m_ErrorMsg);
+				throw std::logic_error(m_ErrorMsg);
 			}
 
 			//Check option value type
@@ -148,7 +149,7 @@ public:
 					{
 						snprintf(m_ErrorMsg, sizeof(m_ErrorMsg), 
 							"Option %s value is required to be unsigned but found signed value", opt.name.c_str());
-						throw std::exception(m_ErrorMsg);
+						throw std::logic_error(m_ErrorMsg);
 					}
 				}
 
@@ -179,7 +180,7 @@ public:
 
 		Error:
 			snprintf(m_ErrorMsg, sizeof(m_ErrorMsg), "Option %s value overflow!", opt.name.c_str());
-			throw std::exception(m_ErrorMsg);
+			throw std::logic_error(m_ErrorMsg);
 		}
 	}
 
@@ -257,7 +258,7 @@ private:
 		if (!opt)
 		{
 			snprintf(m_ErrorMsg, sizeof(m_ErrorMsg), "Can't find option %s, it's not registered", name);
-			throw std::exception(m_ErrorMsg);
+			throw std::logic_error(m_ErrorMsg);
 		}
 
 		return opt.value().get();
