@@ -2,7 +2,7 @@
  Tiny csgo client for connecting dedicated server, this is a very incomplete and experimental project. But it can esatblish connections to server and stay alive as a real player in server. You have to use at least c++20 to run the code.
  
 ## Dependencies
- - [hl2sdk-csgo](https://github.com/alliedmodders/hl2sdk/tree/csgo)
+ - [hl2sdk-csgo](https://github.com/alliedmodders/hl2sdk/tree/6eb8f5b2f6cbc57ddd19d1646c7ee1266d2a1ad0) <-- Make sure to use this instead of the latest.
  - [Asio](https://github.com/chriskohlhoff/asio) 
  - CMake
 
@@ -23,3 +23,4 @@
 
 ## Credit
 Thanks to [Leystryku](https://github.com/Leystryku), [his project](https://github.com/Leystryku/leysourceengineclient) has made a great example.
+
