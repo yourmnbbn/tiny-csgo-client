@@ -17,7 +17,11 @@
 
 #include "platform.h"
 
+#ifdef _WIN32
 #define OUT_Z_CAP(x) _Out_z_cap_(x)
+#else
+#define OUT_Z_CAP(x)
+#endif
 
 #ifndef MIN
 #define MIN( a, b ) ( ( ( a ) < ( b ) ) ? ( a ) : ( b ) )

@@ -22,6 +22,11 @@
 #pragma warning (disable:4514)
 #endif
 
+#ifdef POSIX
+#include <stdlib.h>
+#define _aligned_malloc memalign
+#endif
+
 //-----------------------------------------------------------------------------
 
 #define Assert(con) ((void)0)
@@ -37,6 +42,15 @@
 #define MEM_ALLOC_CREDIT_CLASS()
 #define MEM_ALLOC_CLASSNAME(type) NULL
 #define MEM_ALLOC_CREDIT_FUNCTION() 
+
+// Swap two of anything.
+template <class T>
+inline void V_swap(T & x, T & y)
+{
+	T temp = x;
+	x = y;
+	y = temp;
+}
 
 //-----------------------------------------------------------------------------
 // The CUtlMemory class:

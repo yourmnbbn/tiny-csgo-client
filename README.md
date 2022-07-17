@@ -6,10 +6,9 @@
  - [Asio](https://github.com/chriskohlhoff/asio) 
  - CMake
 
-## Compile and Run (Currently only tested on windows)
-### Windows
-1. Configure path of hl2sdk-csgo and Asio in `build.bat`.
-2. Run `build.bat` to compile the project.
-4. Run `tiny-csgo-client-limited.exe` with necessary commandline.
+## Compile and Run 
+1. Configure path of hl2sdk-csgo and Asio in `build.(bat/sh)`.
+2. Run `build.(bat/sh)` to compile the project.
+3. Run `tiny-csgo-client-limited(.exe)` with necessary commandline.
 
 
