@@ -22,7 +22,7 @@ int main(int argc, char** argv)
         return -1;
     }
     
-    Client cl;
+    Client cl(parser);
     if (!cl.PrepareSteamAPI())
         return -1;
     
