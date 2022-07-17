@@ -10,6 +10,7 @@
 #include <mutex>
 #include <vector>
 #include <ranges>
+#include <chrono>
 #include <asio.hpp>
 
 //from hl2sdk-csgo
@@ -36,6 +37,7 @@
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
 using namespace asio::ip;
+using namespace std::chrono_literals;
 
 inline asio::io_context g_IoContext;
 
@@ -893,9 +895,23 @@ asio::awaitable<bool> Client::SendConnectPacket(
 
 	co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
-	//Wait for connect response, TO DO: add timeout support
+	asio::steady_timer timer(g_IoContext, 2s);
+	asio::co_spawn(g_IoContext,
+		[=, &socket, &timer]() -> asio::awaitable<void> {
+			co_await timer.async_wait(asio::use_awaitable);
+			socket.close();
+
+			//Try to reconnect
+			g_IoContext.restart();
+			asio::co_spawn(g_IoContext, ConnectToServer(), asio::detached);
+			g_IoContext.run();
+		},
+		asio::detached
+			);
+	//Wait for connect response
 	co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 	co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+	timer.cancel();
 	
 	ResetReadBuffer();
 	if (m_ReadBuf.ReadLong() != -1)
@@ -938,9 +954,32 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 
 	co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten() + len + 1), remote_endpoint, asio::use_awaitable);
 
-	//Wait for challenge response, TO DO: add timeout support
+	asio::steady_timer timer(g_IoContext, 2s);
+	asio::co_spawn(g_IoContext,
+		[=, &socket, &timer]() -> asio::awaitable<void> {
+			co_await timer.async_wait(asio::use_awaitable);
+			socket.close();
+
+			static int failed_times = 0;
+
+			if (failed_times++ < CONFIG_MAX_RETRY_LIMIT)
+			{
+				g_IoContext.restart();
+				asio::co_spawn(g_IoContext, ConnectToServer(), asio::detached);
+				g_IoContext.run();
+			}
+			else
+			{
+				printf("Connection failed after %d retries!\n", CONFIG_MAX_RETRY_LIMIT);
+				g_IoContext.stop();
+			}
+		},
+		asio::detached
+			);
+	//Wait for challenge response
 	co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 	co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+	timer.cancel();
 
 	auto failed_obj = std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(false, 0, 0, 0);
 
@@ -1019,8 +1058,20 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 		co_await SendDatagram(socket, remote_endpoint);
 		co_await SendRawDatagramBuffer(socket, remote_endpoint);
 
+		asio::steady_timer timer(g_IoContext, 25s);
+		asio::co_spawn(g_IoContext,
+			[=, &socket, &timer]() -> asio::awaitable<void> {
+				co_await timer.async_wait(asio::use_awaitable);
+				printf("Connection timeout! (25s)\n");
+				socket.close();
+				g_IoContext.stop();
+			},
+			asio::detached
+				);
+		
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 		size_t length = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
+		timer.cancel();
 
 		ResetReadBuffer();
 
