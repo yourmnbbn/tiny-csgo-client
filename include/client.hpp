@@ -34,6 +34,8 @@
 #include "netmessage/subchannel.hpp"
 #include "netmessage/usermsghandler.hpp"
 
+#include "argparser.hpp"
+
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
 using namespace asio::ip;
@@ -67,11 +69,12 @@ class Client
 	};
 
 public:
-	Client() :
+	Client(ArgParser& parser) :
 		m_WriteBuf(m_Buf, sizeof(m_Buf)), 
 		m_ReadBuf(m_Buf, sizeof(m_Buf)), 
 		m_Datageam(m_DatagramBuf, sizeof(m_DatagramBuf)),
-		m_RawDatagram(m_RawDatagramBuf, sizeof(m_RawDatagramBuf))
+		m_RawDatagram(m_RawDatagramBuf, sizeof(m_RawDatagramBuf)),
+		m_ArgParser(parser)
 	{
 		for (int i = 0; i < MAX_STREAMS; i++)
 		{
@@ -81,7 +84,7 @@ public:
 	
 	[[nodiscard("Steam api must be confirmed working before running the client!")]]
 	bool						PrepareSteamAPI(); 
-	void						BindServer(const char* ip, const char* nickname, const char* password, uint16_t port);
+	void						BindServer(const char* ip, const char* nickname, const char* password, uint16_t port, uint16_t clientport);
 	inline void					RunClient() { g_IoContext.run(); }
 	void						InitCommandInput();
 	
@@ -137,6 +140,7 @@ private:
 	inline void					ResetReadBuffer() { m_ReadBuf.Seek(0); }
 	inline int					ReadBufferHeaderInt32() { return *(int*)m_Buf; }
 	inline void					PrintRecvBuffer(const char* buf, size_t bytes, bool escapedString = false);
+	inline size_t				DecodeHexString(unsigned char* buffer, size_t maxlength, const char* hexstr);
 
 private:
 	//Bitbuf for reading and writing data
@@ -172,6 +176,7 @@ private:
 	std::string			m_NickName;
 	std::string			m_PassWord;
 	uint16_t			m_Port;
+	uint16_t			m_ClientPort;
 
 	//commandline
 	std::mutex					m_CommandVecLock;
@@ -185,6 +190,13 @@ private:
 	//Flags
 	bool				m_flagRetry = false;
 	bool				m_flagWaitForDisconnect = false;
+
+	ArgParser&			m_ArgParser;
+
+	//m_Ticket, m_TicketLength and m_SteamID are only valid when "-ticket" commandline is provided
+	char				m_Ticket[STEAM_KEYSIZE];
+	int					m_TicketLength;
+	uint64_t			m_UserSteamID;
 };
 
 
@@ -405,7 +417,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 			info.set_server_count(signonState.spawn_count());
 			info.set_is_hltv(false);
 			info.set_is_replay(false);
-			info.set_friends_id(SteamUser() ? SteamUser()->GetSteamID().GetAccountID() : 0);
+			info.set_friends_id(client->m_ArgParser.HasOption("-ticket") ? CSteamID(client->m_UserSteamID).GetAccountID() : SteamUser()->GetSteamID().GetAccountID());
 			info.set_friends_name(client->m_NickName);
 
 			client->SendNetMessage(info);
@@ -742,6 +754,14 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 bool Client::PrepareSteamAPI()
 {
+	//We don't need steam to run the client if the user provided a valid ticket
+	if (m_ArgParser.HasOption("-ticket"))
+	{
+		m_TicketLength = DecodeHexString((unsigned char*)m_Ticket, sizeof(m_Ticket), m_ArgParser.GetOptionValueString("-ticket"));
+		m_UserSteamID = *reinterpret_cast<uint64_t*>((uintptr_t)m_Ticket + 12);
+		return true;
+	}
+
 	if (!SteamAPI_IsSteamRunning())
 	{
 		printf("Steam is not running!\n");
@@ -762,12 +782,13 @@ bool Client::PrepareSteamAPI()
 	return true;
 }
 
-void Client::BindServer(const char* ip, const char* nickname, const char* password, uint16_t port)
+void Client::BindServer(const char* ip, const char* nickname, const char* password, uint16_t port, uint16_t clientport)
 {
 	m_Ip = ip;
 	m_NickName = nickname;
 	m_PassWord = password;
 	m_Port = port;
+	m_ClientPort = clientport;
 
 	asio::co_spawn(g_IoContext, ConnectToServer(), asio::detached);
 }
@@ -796,7 +817,7 @@ asio::awaitable<void> Client::ConnectToServer()
 	printf("Connecting to server %s:%u, using nickname %s, using password %s\n",
 		m_Ip.c_str(), m_Port, m_NickName.c_str(), m_PassWord.c_str());
 
-	udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_Port));
+	udp::socket socket(g_IoContext, udp::endpoint(udp::v4(), m_ClientPort));
 	auto remote_endpoint = udp::endpoint(make_address(m_Ip), m_Port);
 
 	co_await StartConnectProcess(socket, remote_endpoint);
@@ -881,17 +902,28 @@ asio::awaitable<bool> Client::SendConnectPacket(
 	m_WriteBuf.WriteOneBit(0); //low violence setting
 	m_WriteBuf.WriteLongLong(m_nServerReservationCookie); //reservation cookie
 	m_WriteBuf.WriteByte(1); //platform
+	m_WriteBuf.WriteLong(0); //Encryption key index
 
 	unsigned char steamkey[STEAM_KEYSIZE];
 	unsigned int keysize = 0;
 
-	CSteamID localsid = SteamUser()->GetSteamID();
-	SteamUser()->GetAuthSessionTicket(steamkey, STEAM_KEYSIZE, &keysize);
+	if (m_ArgParser.HasOption("-ticket"))
+	{
+		m_WriteBuf.WriteShort(m_TicketLength + sizeof(uint64));
+		m_WriteBuf.WriteLongLong(m_UserSteamID);
+		m_WriteBuf.WriteBytes(m_Ticket, m_TicketLength);
+		printf("STEAM ID: %llu, len:%d\n", m_UserSteamID, m_TicketLength);
+	}
+	else
+	{
+		CSteamID localsid = SteamUser()->GetSteamID();
+		SteamUser()->GetAuthSessionTicket(steamkey, STEAM_KEYSIZE, &keysize);
 
-	m_WriteBuf.WriteLong(0); //Encryption key index
-	m_WriteBuf.WriteShort(keysize + sizeof(uint64));
-	m_WriteBuf.WriteLongLong(localsid.ConvertToUint64());
-	m_WriteBuf.WriteBytes(steamkey, keysize);
+		m_WriteBuf.WriteShort(keysize + sizeof(uint64));
+		m_WriteBuf.WriteLongLong(localsid.ConvertToUint64());
+		m_WriteBuf.WriteBytes(steamkey, keysize);
+	}
+
 
 	co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
@@ -912,7 +944,7 @@ asio::awaitable<bool> Client::SendConnectPacket(
 	co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 	co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 	timer.cancel();
-	
+
 	ResetReadBuffer();
 	if (m_ReadBuf.ReadLong() != -1)
 		co_return false;
@@ -1068,7 +1100,7 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 			},
 			asio::detached
 				);
-		
+
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 		size_t length = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);
 		timer.cancel();
@@ -1752,10 +1784,43 @@ inline void Client::PrintRecvBuffer(const char* buf, size_t bytes, bool escapedS
 	printf("\n\n");
 }
 
+//https://github.com/alliedmodders/sourcemod/blob/1fbe5e1daaee9ba44164078fe7f59d862786e612/core/logic/stringutil.cpp#L273
+inline size_t Client::DecodeHexString(unsigned char* buffer, size_t maxlength, const char* hexstr)
+{
+	size_t written = 0;
+	size_t length = strlen(hexstr);
+
+	for (size_t i = 0; i < length; i++)
+	{
+		if (written >= maxlength)
+			break;
+		buffer[written++] = hexstr[i];
+		if (hexstr[i] == '\\' && hexstr[i + 1] == 'x')
+		{
+			if (i + 3 >= length)
+				continue;
+			/* Get the hex part. */
+			char s_byte[3];
+			int r_byte;
+			s_byte[0] = hexstr[i + 2];
+			s_byte[1] = hexstr[i + 3];
+			s_byte[2] = '\0';
+			/* Read it as an integer */
+			sscanf(s_byte, "%x", &r_byte);
+			/* Save the value */
+			buffer[written - 1] = r_byte;
+			/* Adjust index */
+			i += 3;
+		}
+	}
+
+	return written;
+}
+
 inline void Client::BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList)
 {
 	char buf[256];
-	snprintf(buf, sizeof(buf), "%u", SteamUser()->GetSteamID().GetAccountID());
+	snprintf(buf, sizeof(buf), "%u", m_ArgParser.HasOption("-ticket") ? CSteamID(m_UserSteamID).GetAccountID() : SteamUser()->GetSteamID().GetAccountID());
 	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "accountid", buf);
 	
 	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "name", m_NickName.c_str());

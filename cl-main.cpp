@@ -9,6 +9,8 @@ int main(int argc, char** argv)
     parser.AddOption("-port", "Game server port.", OptionAttr::RequiredWithValue, OptionValueType::INT16U);
     parser.AddOption("-pw", "Password of the server", OptionAttr::OptionalWithValue, OptionValueType::STRING);
     parser.AddOption("-name", "Nick name of you.", OptionAttr::RequiredWithValue, OptionValueType::STRING);
+    parser.AddOption("-cport", "Client port", OptionAttr::OptionalWithValue, OptionValueType::INT16U);
+    parser.AddOption("-ticket", "Auth session ticket from steam", OptionAttr::OptionalWithValue, OptionValueType::STRING);
 
     try
     {
@@ -28,7 +30,8 @@ int main(int argc, char** argv)
     cl.BindServer(parser.GetOptionValueString("-ip"), 
         parser.GetOptionValueString("-name"), 
         parser.GetOptionValueString("-pw"),
-        parser.GetOptionValueInt16U("-port"));
+        parser.GetOptionValueInt16U("-port"),
+        parser.HasOption("-cport") ? parser.GetOptionValueInt16U("-cport") : 27015);
     cl.RunClient();
 
     return 0;
