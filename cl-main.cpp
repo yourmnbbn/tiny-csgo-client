@@ -10,7 +10,7 @@ int main(int argc, char** argv)
     parser.AddOption("-pw", "Password of the server", OptionAttr::OptionalWithValue, OptionValueType::STRING);
     parser.AddOption("-name", "Nick name of you.", OptionAttr::RequiredWithValue, OptionValueType::STRING);
     parser.AddOption("-cport", "Client port", OptionAttr::OptionalWithValue, OptionValueType::INT16U);
-    parser.AddOption("-ticket", "Auth session ticket from steam", OptionAttr::OptionalWithValue, OptionValueType::STRING);
+    parser.AddOption("-ticket", "Auth session ticket from steam", OptionAttr::RequiredWithValue, OptionValueType::STRING);
 
     try
     {
