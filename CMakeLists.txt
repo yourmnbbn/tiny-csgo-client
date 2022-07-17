@@ -28,7 +28,7 @@ if(MSVC)
         -D _GENERIC
         -D COMPILER_MSVC
         -D COMPILER_MSVC32
-        -D __cpp_lib_format
+        -D __cpp_lib_ranges
         -D _SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
     )
     
