@@ -5,10 +5,11 @@
 #pragma once
 #endif
 
-#include <tier0/basetypes.h>
-#include <strtools.h>
 #include "netmessages.h"
 #include "../common/bitbuf.h"
+
+#define PAD_NUMBER(number, boundary) \
+	( ((number) + ((boundary)-1)) / (boundary) ) * (boundary)
 
 #define HEADER_BYTES	9
 #define	NET_MAX_MESSAGE	PAD_NUMBER( ( NET_MAX_PAYLOAD + HEADER_BYTES ), 16 )
@@ -175,7 +176,7 @@ bool NET_GetLong(bf_read& msg, size_t& packetSize)
 			return false;
 		}
 
-		Q_memcpy((void*)msg.GetBasePointer(), entry->netsplit.buffer, entry->netsplit.totalSize);
+		memcpy((void*)msg.GetBasePointer(), entry->netsplit.buffer, entry->netsplit.totalSize);
 		packetSize = entry->netsplit.totalSize;
 		return true;
 	}

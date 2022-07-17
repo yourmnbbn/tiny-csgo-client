@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.23)
-project(tiny-csgo-client)
+project(tiny-csgo-client-limited)
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 20)
@@ -7,11 +7,6 @@ set(CMAKE_CXX_STANDARD 20)
 include_directories (
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${HL2SDK-CSGO}/common/protobuf-2.5.0/src
-    ${HL2SDK-CSGO}/public/engine/protobuf
-    ${HL2SDK-CSGO}/public/steam
-    ${HL2SDK-CSGO}/public/tier0
-    ${HL2SDK-CSGO}/public
-    ${HL2SDK-CSGO}/public/tier1
     ${ASIO-SRC}/include
 )
 
@@ -33,12 +28,7 @@ if(MSVC)
     )
     
     set(STATIC_LIB_LIST 
-        tier1.lib 
-        tier0.lib 
         legacy_stdio_definitions.lib 
-        steam_api.lib 
-        mathlib.lib 
-        vstdlib.lib 
         libprotobuf.lib
     )
     
@@ -57,12 +47,6 @@ elseif(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU"))
     
     set(STATIC_LIB_LIST 
         ${HL2SDK-CSGO}/lib/linux32/release/libprotobuf.a
-        ${HL2SDK-CSGO}/lib/linux/tier1_i486.a
-        ${HL2SDK-CSGO}/lib/linux/mathlib_i486.a
-        ${HL2SDK-CSGO}/lib/linux/interfaces_i486.a
-        ${HL2SDK-CSGO}/lib/linux/libtier0.so
-        ${HL2SDK-CSGO}/lib/linux/libvstdlib.so
-        ${HL2SDK-CSGO}/lib/linux/libsteam_api.so
         libpthread.so
     )
         
@@ -78,10 +62,10 @@ elseif(("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU"))
 
 endif()
 
-add_executable(tiny-csgo-client ${SRC_LIST})
-target_link_libraries(tiny-csgo-client ${STATIC_LIB_LIST})
+add_executable(tiny-csgo-client-limited ${SRC_LIST})
+target_link_libraries(tiny-csgo-client-limited ${STATIC_LIB_LIST})
 
 if(MSVC)
-    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT tiny-csgo-client)
+    set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT tiny-csgo-client-limited)
 endif()
 

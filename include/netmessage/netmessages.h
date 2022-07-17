@@ -6,8 +6,8 @@
 #pragma warning(disable : 4100)	// unreferenced formal parameter
 #endif
 
-#include <inetmessage.h>
-#include <netmessages.pb.h>
+#include "inetmessage.h"
+#include "netmessages.pb.h"
 
 //The interface in the hl2sdk is outdated, this is from the cstrike15_src
 #include "inetchannelinfo.h"

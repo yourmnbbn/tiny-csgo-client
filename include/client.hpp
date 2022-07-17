@@ -11,30 +11,23 @@
 #include <vector>
 #include <ranges>
 #include <chrono>
+#include <random>
 #include <asio.hpp>
+#include "argparser.hpp"
 
-//from hl2sdk-csgo
+#include "common/utlmemory.h"
+#include "common/IceKey.H"
 #include "common/bitbuf.h"
-#include <steam_api.h>
-#include <strtools.h>
-#include <checksum_crc.h>
-#include <mathlib/IceKey.H>
-#include <utlmemory.h>
-#include <lzss.h>
-#include <vstdlib/random.h>
-#include <utlbuffer.h>
-#include <KeyValues.h>
-
+#include "common/lzss.h"
+#include "common/checksum_crc.h"
 #include "common/proto_oob.h"
 #include "common/protocol.h"
 #include "common/datafragments.h"
-#include "netmessage/netmessages_signon.h"
 #include "netmessage/netmessages.h"
+#include "netmessage/netmessages.pb.h"
+#include "netmessage/netmessages_signon.h"
 #include "netmessage/splitmessage.hpp"
 #include "netmessage/subchannel.hpp"
-#include "netmessage/usermsghandler.hpp"
-
-#include "argparser.hpp"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -54,6 +47,24 @@ inline constexpr int SEND_TABLE_CRC32 = 0x3C17F0B1;
 //Max retry limitation when connection failed at some point
 inline constexpr int CONFIG_MAX_RETRY_LIMIT = 30;
 
+
+inline int RandomInt(int start, int end)
+{
+	std::default_random_engine engine;
+	return std::uniform_int_distribution<uint32_t>(start, end)(engine);
+}
+
+const char* StringAfterPrefix(const char* str, const char* prefix)
+{
+	do
+	{
+		if (!*prefix)
+			return str;
+	} while (tolower(*str++) == tolower(*prefix++));
+	return NULL;
+}
+inline bool	StringHasPrefix(const char* str, const char* prefix) { return StringAfterPrefix(str, prefix) != NULL; }
+
 class Client
 {
 	//For handling netmessages
@@ -61,11 +72,6 @@ class Client
 	{
 	public:
 		static bool				HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type);
-
-		//Print keyvalues as string
-		static void				RecursivePrintKeyValues(KeyValues* kv, int indentLevel);
-		static void				PrintConvertedString(const char* pszString);
-		inline static void		WriteIndents(int indentLevel);
 	};
 
 public:
@@ -82,7 +88,6 @@ public:
 		}
 	}
 	
-	[[nodiscard("Steam api must be confirmed working before running the client!")]]
 	bool						PrepareSteamAPI(); 
 	void						BindServer(const char* ip, const char* nickname, const char* password, uint16_t port, uint16_t clientport);
 	inline void					RunClient() { g_IoContext.run(); }
@@ -200,165 +205,6 @@ private:
 };
 
 
-
-void Client::CNetMessageHandler::RecursivePrintKeyValues(KeyValues* kv, int indentLevel)
-{
-	// write header
-	WriteIndents(indentLevel);
-	printf("\"");
-	PrintConvertedString(kv->GetName());
-	printf("\"\n");
-	WriteIndents(indentLevel);
-	printf("{\n");
-	
-	// loop through all our keys writing them to disk
-	for (KeyValues* dat = kv->GetFirstSubKey(); dat != NULL; dat = dat->GetNextKey())
-	{
-		if (dat->GetFirstSubKey())
-		{
-			RecursivePrintKeyValues(dat, indentLevel + 1);
-		}
-		else
-		{
-			// only write non-empty keys
-
-			switch (dat->GetDataType())
-			{
-			case KeyValues::TYPE_STRING:
-			{
-				if (dat->GetString() && *(dat->GetString()))
-				{
-					WriteIndents(indentLevel + 1);
-					printf("\"");
-					PrintConvertedString(dat->GetName());
-					printf("\"\t\t\"");
-
-					PrintConvertedString(dat->GetString());
-
-					printf("\"\n");
-				}
-				break;
-			}
-			case KeyValues::TYPE_WSTRING:
-			{
-#ifdef _WIN32
-				if (dat->GetWString())
-				{
-					constexpr auto KEYVALUES_TOKEN_SIZE = 1024;
-					static char buf[KEYVALUES_TOKEN_SIZE];
-					// make sure we have enough space
-					Assert(::WideCharToMultiByte(CP_UTF8, 0, dat->GetWString(), -1, NULL, 0, NULL, NULL) < KEYVALUES_TOKEN_SIZE);
-					int result = ::WideCharToMultiByte(CP_UTF8, 0, dat->GetWString(), -1, buf, KEYVALUES_TOKEN_SIZE, NULL, NULL);
-					if (result)
-					{
-						WriteIndents(indentLevel + 1);
-						printf("\"");
-						printf(dat->GetName());
-						printf("\"\t\t\"");
-
-						PrintConvertedString(buf);
-
-						printf("\"\n");
-					}
-				}
-#endif
-				break;
-			}
-
-			case KeyValues::TYPE_INT:
-			{
-				WriteIndents(indentLevel + 1);
-				printf("\"");
-				printf(dat->GetName());
-				printf("\"\t\t\"");
-
-				char buf[32];
-				Q_snprintf(buf, sizeof(buf), "%d", dat->GetInt());
-
-				printf(buf);
-				printf("\"\n");
-				break;
-			}
-
-			case KeyValues::TYPE_UINT64:
-			{
-				WriteIndents(indentLevel + 1);
-				printf("\"");
-				printf(dat->GetName());
-				printf("\"\t\t\"");
-
-				char buf[32];
-				// write "0x" + 16 char 0-padded hex encoded 64 bit value
-				Q_snprintf(buf, sizeof(buf), "0x%016llX", *((uint64*)dat->GetString()));
-
-				printf(buf);
-				printf("\"\n");
-				break;
-			}
-
-			case KeyValues::TYPE_FLOAT:
-			{
-				WriteIndents(indentLevel + 1);
-				printf("\"");
-				printf(dat->GetName());
-				printf("\"\t\t\"");
-
-				char buf[48];
-				Q_snprintf(buf, sizeof(buf), "%f", dat->GetFloat());
-
-				printf(buf, Q_strlen(buf));
-				printf("\"\n");
-				break;
-			}
-			case KeyValues::TYPE_COLOR:
-				printf("Client::CNetMessageHandler::RecursivePrintKeyValues TODO, missing code for TYPE_COLOR.\n");
-				break;
-
-			default:
-				break;
-			}
-		}
-	}
-
-	// write tail
-	WriteIndents(indentLevel);
-	printf("}\n");
-}
-
-void Client::CNetMessageHandler::PrintConvertedString(const char* pszString)
-{
-	// handle double quote chars within the string
-	// the worst possible case is that the whole string is quotes
-	int len = Q_strlen(pszString);
-	char* convertedString = (char*)alloca((len + 1) * sizeof(char) * 2);
-	int j = 0;
-	for (int i = 0; i <= len; i++)
-	{
-		if (pszString[i] == '\"')
-		{
-			convertedString[j] = '\\';
-			j++;
-		}
-		else if (pszString[i] == '\\')
-		{
-			convertedString[j] = '\\';
-			j++;
-		}
-		convertedString[j] = pszString[i];
-		j++;
-	}
-
-	printf(convertedString);
-}
-
-void Client::CNetMessageHandler::WriteIndents(int indentLevel)
-{
-	for (int i = 0; i < indentLevel; i++)
-	{
-		printf("\t");
-	}
-}
-
 bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_read& buf, int type)
 {
 	switch (type)
@@ -381,13 +227,6 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		command.ReadFromBuffer(buf);
 		printf("Receive NetMessage CNETMsg_StringCmd_t\n");
 		printf("Server wants to execute command %s", command.command().c_str());
-		return true;
-	}
-	case net_PlayerAvatarData:
-	{
-		CNETMsg_PlayerAvatarData_t avatar;
-		avatar.ReadFromBuffer(buf);
-		printf("Receive NetMessage CNETMsg_PlayerAvatarData_t\n");
 		return true;
 	}
 	case net_SignonState:
@@ -417,7 +256,7 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 			info.set_server_count(signonState.spawn_count());
 			info.set_is_hltv(false);
 			info.set_is_replay(false);
-			info.set_friends_id(client->m_ArgParser.HasOption("-ticket") ? CSteamID(client->m_UserSteamID).GetAccountID() : SteamUser()->GetSteamID().GetAccountID());
+			info.set_friends_id(client->m_UserSteamID);
 			info.set_friends_name(client->m_NickName);
 
 			client->SendNetMessage(info);
@@ -488,34 +327,6 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 		return true;
 	}
-	case net_File:
-	{
-		CNETMsg_File_t file;
-		file.ReadFromBuffer(buf);
-		printf("Receive NetMessage CNETMsg_File_t\n");
-		return true;
-	}
-	case net_SplitScreenUser:
-	{
-		CNETMsg_SplitScreenUser_t splitScreenUser;
-		splitScreenUser.ReadFromBuffer(buf);
-		printf("Receive NetMessage CNETMsg_SplitScreenUser_t\n");
-		return true;
-	}
-	case svc_ServerInfo:
-	{
-		CSVCMsg_ServerInfo_t info;
-		info.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_ServerInfo_t\n");
-		return true;
-	}
-	case svc_SendTable:
-	{
-		CSVCMsg_SendTable_t sendTable;
-		sendTable.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_SendTable_t\n");
-		return true;
-	}
 	case svc_ClassInfo:
 	{
 		CSVCMsg_ClassInfo_t classInfo;
@@ -529,13 +340,6 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 				svclass.class_name().c_str(), svclass.data_table_name().c_str());
 		}
 
-		return true;
-	}
-	case svc_SetPause:
-	{
-		CSVCMsg_SetPause_t setPause;
-		setPause.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_SetPause_t\n");
 		return true;
 	}
 	case svc_CreateStringTable:
@@ -552,27 +356,6 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 		return true;
 	}
-	case svc_UpdateStringTable:
-	{
-		CSVCMsg_UpdateStringTable_t updateStringTable;
-		updateStringTable.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_UpdateStringTable_t\n");
-		return true;
-	}
-	case svc_VoiceInit:
-	{
-		CSVCMsg_VoiceInit_t voiceInit;
-		voiceInit.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_VoiceInit_t\n");
-		return true;
-	}
-	case svc_VoiceData:
-	{
-		CSVCMsg_VoiceData_t voiceData;
-		voiceData.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_VoiceData_t\n");
-		return true;
-	}
 	case svc_Print:
 	{
 		CSVCMsg_Print_t print;
@@ -583,168 +366,12 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		}
 		return true;
 	}
-	case svc_Sounds:
-	{
-		CSVCMsg_Sounds_t sounds;
-		sounds.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_Sounds_t\n");
-		return true;
-	}
-	case svc_SetView:
-	{
-		CSVCMsg_SetView_t setview;
-		setview.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_SetView_t\n");
-		return true;
-	}
-	case svc_FixAngle:
-	{
-		CSVCMsg_FixAngle_t fixAngle;
-		fixAngle.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_FixAngle_t\n");
-		return true;
-	}
-	case svc_CrosshairAngle:
-	{
-		CSVCMsg_CrosshairAngle_t crossHairAngle;
-		crossHairAngle.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_CrosshairAngle_t\n");
-		return true;
-	}
-	case svc_BSPDecal:
-	{
-		CSVCMsg_BSPDecal_t bspDecal;
-		bspDecal.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_BSPDecal_t\n");
-		return true;
-	}
-	break;
-	case svc_SplitScreen:
-	{
-		CSVCMsg_SplitScreen_t splitScreen;
-		splitScreen.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_SplitScreen_t\n");
-		return true;
-	}
-	case svc_UserMessage:
-	{
-		CSVCMsg_UserMessage_t userMsg;
-		userMsg.ReadFromBuffer(buf);
-		
-		if (!CUserMsgHandler::HandleUserMessage(userMsg.msg_type(), userMsg.msg_data().c_str(), userMsg.msg_data().size())) 
-		{
-			printf("Unhandled CSVCMsg_UserMessage_t msg_type: %i, passthrough: %i, size: %i\n",
-				userMsg.msg_type(), userMsg.passthrough(), userMsg.msg_data().size());
-		}
-
-		return true;
-	}
-	case svc_EntityMessage:
-	{
-		CSVCMsg_EntityMsg_t entityMsg;
-		entityMsg.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_EntityMessage_t\n");
-		return true;
-	}
-	case svc_GameEvent:
-	{
-		CSVCMsg_GameEvent_t gameEvent;
-		gameEvent.ReadFromBuffer(buf); 
-
-		printf("Receive NetMessage CSVCMsg_GameEvent_t\n");
-		printf("Event:%s(%u)", gameEvent.event_name().c_str(), gameEvent.eventid());
-		return true;
-	}
-	case svc_PacketEntities:
-	{
-		CSVCMsg_PacketEntities_t packetEntity;
-		packetEntity.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_PacketEntities_t\n");
-
-		return true;
-	}
-	case svc_TempEntities:
-	{
-		CSVCMsg_TempEntities_t tempEntity;
-		tempEntity.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_TempEntities_t\n");
-		return true;
-	}
-	case svc_Prefetch:
-	{
-		CSVCMsg_Prefetch_t prefetch;
-		prefetch.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_Prefetch_t\n");
-		return true;
-	}
-	case svc_Menu:
-	{
-		CSVCMsg_Menu_t menu;
-		menu.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_Menu_t\n");
-		return true;
-	}
-	case svc_GameEventList:
-	{
-		CSVCMsg_GameEventList_t gameEventList;
-		gameEventList.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_GameEventList_t\n");
-		return true;
-	}
 	case svc_GetCvarValue:
 	{
 		CSVCMsg_GetCvarValue_t getCvarValue;
 		getCvarValue.ReadFromBuffer(buf);
 		printf("Receive NetMessage CSVCMsg_GetCvarValue_t\n");
 		printf("Server wants to get cvar <%s> value\n", getCvarValue.cvar_name().c_str());
-		return true;
-	}
-	case svc_PaintmapData:
-	{
-		CSVCMsg_PaintmapData_t paintMap;
-		paintMap.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_PaintmapData_t\n");
-		return true;
-	}
-	case svc_CmdKeyValues:
-	{
-		CSVCMsg_CmdKeyValues_t kv;
-		kv.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_CmdKeyValues_t, print as string:\n\n");
-
-		//We don't actually handle these keyvalues, so we just read and print them.
-		KeyValues* pMsgKeyValues = new KeyValues("");
-		KeyValues::AutoDelete autodelete_pMsgKeyValues(pMsgKeyValues);
-
-		const std::string& msgStr = kv.keyvalues();
-		int numBytes = msgStr.size();
-
-		CUtlBuffer bufRead(msgStr.data(), numBytes, CUtlBuffer::READ_ONLY);
-		CUtlBuffer bufWrite;
-		pMsgKeyValues->ReadAsBinary(bufRead);
-		RecursivePrintKeyValues(pMsgKeyValues, 0);
-
-		return true;
-	}
-	case svc_EncryptedData:
-	{
-		CSVCMsg_EncryptedData_t encryptData;
-		encryptData.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_EncryptedData_t\n");
-		return true;
-	}
-	case svc_HltvReplay:
-	{
-		CSVCMsg_HltvReplay_t hltvReplay;
-		hltvReplay.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_HltvReplay_t delay:%s\n", hltvReplay.delay() ? "replay" : "real-time");
-		return true;
-	}
-	case svc_Broadcast_Command:
-	{
-		CSVCMsg_Broadcast_Command_t broadcastCmd;
-		broadcastCmd.ReadFromBuffer(buf);
-		printf("Receive NetMessage CSVCMsg_Broadcast_Command_t\n");
 		return true;
 	}
 	} //switch(type)
@@ -754,31 +381,8 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 
 bool Client::PrepareSteamAPI()
 {
-	//We don't need steam to run the client if the user provided a valid ticket
-	if (m_ArgParser.HasOption("-ticket"))
-	{
-		m_TicketLength = DecodeHexString((unsigned char*)m_Ticket, sizeof(m_Ticket), m_ArgParser.GetOptionValueString("-ticket"));
-		m_UserSteamID = *reinterpret_cast<uint64_t*>((uintptr_t)m_Ticket + 12);
-		return true;
-	}
-
-	if (!SteamAPI_IsSteamRunning())
-	{
-		printf("Steam is not running!\n");
-		return false;
-	}
-
-	if (!SteamAPI_Init())
-	{
-		printf("Cannot initialize SteamAPI\n");
-		return false;
-	}
-	if (!SteamUser())
-	{
-		printf("Cannot initialize ISteamUser interface\n");
-		return false;
-	}
-
+	m_TicketLength = DecodeHexString((unsigned char*)m_Ticket, sizeof(m_Ticket), m_ArgParser.GetOptionValueString("-ticket"));
+	m_UserSteamID = *reinterpret_cast<uint64_t*>((uintptr_t)m_Ticket + 12);
 	return true;
 }
 
@@ -904,26 +508,9 @@ asio::awaitable<bool> Client::SendConnectPacket(
 	m_WriteBuf.WriteByte(1); //platform
 	m_WriteBuf.WriteLong(0); //Encryption key index
 
-	unsigned char steamkey[STEAM_KEYSIZE];
-	unsigned int keysize = 0;
-
-	if (m_ArgParser.HasOption("-ticket"))
-	{
-		m_WriteBuf.WriteShort(m_TicketLength + sizeof(uint64));
-		m_WriteBuf.WriteLongLong(m_UserSteamID);
-		m_WriteBuf.WriteBytes(m_Ticket, m_TicketLength);
-		printf("STEAM ID: %llu, len:%d\n", m_UserSteamID, m_TicketLength);
-	}
-	else
-	{
-		CSteamID localsid = SteamUser()->GetSteamID();
-		SteamUser()->GetAuthSessionTicket(steamkey, STEAM_KEYSIZE, &keysize);
-
-		m_WriteBuf.WriteShort(keysize + sizeof(uint64));
-		m_WriteBuf.WriteLongLong(localsid.ConvertToUint64());
-		m_WriteBuf.WriteBytes(steamkey, keysize);
-	}
-
+	m_WriteBuf.WriteShort(m_TicketLength + sizeof(uint64));
+	m_WriteBuf.WriteLongLong(m_UserSteamID);
+	m_WriteBuf.WriteBytes(m_Ticket, m_TicketLength);
 
 	co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
 
@@ -1228,7 +815,7 @@ void Client::ProcessPacket(int packetSize)
 		for (int k = 0; k < (int)packetSize; k += iceKey.blockSize())
 		{
 			iceKey.decrypt((const unsigned char*)(m_Buf + k), pchCryptoBuffer);
-			Q_memcpy(memDecryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
+			memcpy(memDecryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
 		}
 
 		// Check how much random fudge we have
@@ -1237,7 +824,7 @@ void Client::ProcessPacket(int packetSize)
 		{
 			// Fetch the size of the encrypted message
 			int32 numBytesWrittenWire = 0;
-			Q_memcpy(&numBytesWrittenWire, memDecryptedAll.Base() + 1 + numRandomFudgeBytes, sizeof(int32));
+			memcpy(&numBytesWrittenWire, memDecryptedAll.Base() + 1 + numRandomFudgeBytes, sizeof(int32));
 			int32 const numBytesWritten = BigLong(numBytesWrittenWire);	// byteswap from the wire
 
 			// Make sure the total size of the message matches the expectations
@@ -1245,7 +832,7 @@ void Client::ProcessPacket(int packetSize)
 			{
 				// Fix the packet to point at decrypted data!
 				packetSize = numBytesWritten;
-				Q_memcpy(m_Buf, memDecryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), packetSize);
+				memcpy(m_Buf, memDecryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), packetSize);
 			}
 		}
 	}
@@ -1262,7 +849,6 @@ void Client::ProcessPacket(int packetSize)
 		if (actualSize <= 0 || actualSize > NET_MAX_PAYLOAD)
 			return;
 
-		MEM_ALLOC_CREDIT();
 		CUtlMemoryFixedGrowable< byte, NET_COMPRESSION_STACKBUF_SIZE > memDecompressed(NET_COMPRESSION_STACKBUF_SIZE);
 		memDecompressed.EnsureCapacity(actualSize);
 
@@ -1273,7 +859,7 @@ void Client::ProcessPacket(int packetSize)
 		}
 
 		// packet->wiresize is already set
-		Q_memcpy(m_Buf, memDecompressed.Base(), uDecompressedSize);
+		memcpy(m_Buf, memDecompressed.Base(), uDecompressedSize);
 
 		packetSize = uDecompressedSize;
 	}
@@ -1549,18 +1135,14 @@ bool Client::ProcessMessages(bf_read& buf, bool wasReliable, size_t length)
 		{
 			//Is there any chance that unreliable data could be encoded? 
 			int size = buf.ReadVarInt32();
-			printf("Error: Got unhandled message type 0x%X\n", cmd);
-			//PrintRecvBuffer((char*)buf.GetBasePointer() + startbit / 8, length, false);
 			if (size < 0 || size > NET_MAX_PAYLOAD)
 			{
-				printf("Unknown message size %i exceed the limit %i\n", size, NET_MAX_PAYLOAD);
 				return false;
 			}
 
 			// Check its valid
 			if (size > buf.GetNumBytesLeft())
 			{
-				printf("Unknown message size(%i) greater than bytes left(%i) in the message, abort parsing\n", size, buf.GetNumBytesLeft());
 				return false;
 			}
 
@@ -1677,21 +1259,21 @@ int Client::EncryptDatagram()
 	// Prepare the encrypted memory
 	memEncryptedAll.EnsureCapacity(numTotalEncryptedBytes);
 	*memEncryptedAll.Base() = numRandomFudgeBytes;
-	Q_memcpy(memEncryptedAll.Base() + 1, pchRandomFudgeBytes, numRandomFudgeBytes);
+	memcpy(memEncryptedAll.Base() + 1, pchRandomFudgeBytes, numRandomFudgeBytes);
 
 	int32 const numBytesWrittenWire = BigLong(length);	// byteswap for the wire
-	Q_memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes, &numBytesWrittenWire, sizeof(numBytesWrittenWire));
-	Q_memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), m_Buf, length);
+	memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes, &numBytesWrittenWire, sizeof(numBytesWrittenWire));
+	memcpy(memEncryptedAll.Base() + 1 + numRandomFudgeBytes + sizeof(int32), m_Buf, length);
 
 	// Encrypt the message
 	unsigned char* pchCryptoBuffer = (unsigned char*)stackalloc(iceKey.blockSize());
 	for (int k = 0; k < numTotalEncryptedBytes; k += iceKey.blockSize())
 	{
 		iceKey.encrypt((const unsigned char*)(memEncryptedAll.Base() + k), pchCryptoBuffer);
-		Q_memcpy(memEncryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
+		memcpy(memEncryptedAll.Base() + k, pchCryptoBuffer, iceKey.blockSize());
 	}
 
-	Q_memcpy(m_Buf, memEncryptedAll.Base(), numTotalEncryptedBytes);
+	memcpy(m_Buf, memEncryptedAll.Base(), numTotalEncryptedBytes);
 
 	return numTotalEncryptedBytes;
 }
@@ -1723,7 +1305,7 @@ bool Client::BufferToBufferDecompress(char* dest, unsigned int& destLen, char* s
 		unsigned int uDecompressedLen = s.GetActualSize((byte*)source);
 		if (uDecompressedLen > destLen)
 		{
-			Warning("NET_BufferToBufferDecompress with improperly sized dest buffer (%u in, %u needed)\n", destLen, uDecompressedLen);
+			printf("NET_BufferToBufferDecompress with improperly sized dest buffer (%u in, %u needed)\n", destLen, uDecompressedLen);
 			return false;
 		}
 		else
@@ -1735,11 +1317,11 @@ bool Client::BufferToBufferDecompress(char* dest, unsigned int& destLen, char* s
 	{
 		if (sourceLen > destLen)
 		{
-			Warning("NET_BufferToBufferDecompress with improperly sized dest buffer (%u in, %u needed)\n", destLen, sourceLen);
+			printf("NET_BufferToBufferDecompress with improperly sized dest buffer (%u in, %u needed)\n", destLen, sourceLen);
 			return false;
 		}
 
-		Q_memcpy(dest, source, sourceLen);
+		memcpy(dest, source, sourceLen);
 		destLen = sourceLen;
 	}
 
@@ -1820,7 +1402,7 @@ inline size_t Client::DecodeHexString(unsigned char* buffer, size_t maxlength, c
 inline void Client::BuildUserInfoUpdateMessage(CMsg_CVars& rCvarList)
 {
 	char buf[256];
-	snprintf(buf, sizeof(buf), "%u", m_ArgParser.HasOption("-ticket") ? CSteamID(m_UserSteamID).GetAccountID() : SteamUser()->GetSteamID().GetAccountID());
+	snprintf(buf, sizeof(buf), "%u", static_cast<uint32_t>(m_UserSteamID));
 	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "accountid", buf);
 	
 	NetMsgSetCVarUsingDictionary(rCvarList.add_cvars(), "name", m_NickName.c_str());

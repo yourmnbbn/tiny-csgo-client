@@ -1,4 +1,4 @@
-//========= Copyright © 1996-2005, Valve Corporation, All rights reserved. ============//
+//========= Copyright ?1996-2005, Valve Corporation, All rights reserved. ============//
 //
 // Purpose: 
 //
@@ -8,27 +8,6 @@
 
 #include "bitbuf.h"
 #include "coordsize.h"
-#include "mathlib/vector.h"
-#include "mathlib/mathlib.h"
-#include "tier1/strtools.h"
-#include "bitvec.h"
-
-// FIXME: Can't use this until we get multithreaded allocations in tier0 working for tools
-// This is used by VVIS and fails to link
-// NOTE: This must be the last file included!!!
-//#include "tier0/memdbgon.h"
-
-#ifdef _X360
-// mandatory ... wary of above comment and isolating, tier0 is built as MT though
-#include "tier0/memdbgon.h"
-#endif
-
-#ifndef NDEBUG
-static volatile char const *pDebugString;
-#define DEBUG_LINK_CHECK pDebugString = "tier1.lib built debug!"
-#else
-#define DEBUG_LINK_CHECK
-#endif
 
 #if _WIN32
 #define FAST_BIT_SCAN 1
@@ -44,6 +23,8 @@ inline unsigned int CountTrailingZeros( unsigned int elem )
 }
 #else
 #include <intrin.h>
+#include <cmath>
+#include <wchar.h>
 #pragma intrinsic(_BitScanReverse)
 #pragma intrinsic(_BitScanForward)
 
@@ -68,7 +49,9 @@ inline unsigned int CountTrailingZeros(unsigned int elem)
 #endif
 
 
+
 static BitBufErrorHandler g_BitBufErrorHandler = 0;
+
 
 inline int BitForBitnum(int bitnum)
 {
@@ -127,7 +110,6 @@ CBitWriteMasksInit g_BitWriteMasksInit;
 
 bf_write::bf_write()
 {
-	DEBUG_LINK_CHECK;
 	m_pData = NULL;
 	m_nDataBytes = 0;
 	m_nDataBits = -1; // set to -1 so we generate overflow on any operation
@@ -139,7 +121,6 @@ bf_write::bf_write()
 
 bf_write::bf_write( const char *pDebugName, void *pData, int nBytes, int nBits )
 {
-	DEBUG_LINK_CHECK;
 	m_bAssertOnOverflow = true;
 	m_pDebugName = pDebugName;
 	StartWriting( pData, nBytes, 0, nBits );
@@ -154,11 +135,6 @@ bf_write::bf_write( void *pData, int nBytes, int nBits )
 
 void bf_write::StartWriting( void *pData, int nBytes, int iStartBit, int nBits )
 {
-	// Make sure it's dword aligned and padded.
-	DEBUG_LINK_CHECK;
-	Assert( (nBytes % 4) == 0 );
-	Assert(((uintp)pData & 3) == 0);
-
 	// The writing code will overrun the end of the buffer if it isn't dword aligned, so truncate to force alignment
 	nBytes &= ~3;
 
@@ -171,7 +147,7 @@ void bf_write::StartWriting( void *pData, int nBytes, int iStartBit, int nBits )
 	}
 	else
 	{
-		Assert( nBits <= nBytes*8 );
+		//Assert( nBits <= nBytes*8 );
 		m_nDataBits = nBits;
 	}
 
@@ -214,7 +190,7 @@ void bf_write::SeekToBit( int bitPos )
 void bf_write::WriteSBitLong( int data, int numbits )
 {
 	// Do we have a valid # of bits to encode with?
-	Assert( numbits >= 1 );
+	//Assert( numbits >= 1 );
 
 	// Note: it does this wierdness here so it's bit-compatible with regular integer data in the buffer.
 	// (Some old code writes direct integers right into the buffer).
@@ -227,11 +203,11 @@ void bf_write::WriteSBitLong( int data, int numbits )
 
 		if( data < 0 )
 		{
-			Assert( data >= -(BitForBitnum(numbits-1)) );
+			//Assert( data >= -(BitForBitnum(numbits-1)) );
 		}
 		else
 		{
-			Assert( data < (BitForBitnum(numbits-1)) );
+			//Assert( data < (BitForBitnum(numbits-1)) );
 		}
 	}
 #endif
@@ -426,7 +402,7 @@ void bf_write::WriteVarInt64( uint64 data )
 			}
 		}
 
-		AssertFatalMsg( false, "Can't get here." );
+		//AssertFatalMsg( false, "Can't get here." );
 
 		size10: target[9] = static_cast<uint8>((part2 >>  7) | 0x80);
 		size9 : target[8] = static_cast<uint8>((part2      ) | 0x80);
@@ -534,7 +510,7 @@ bool bf_write::WriteBits(const void *pInData, int nBits)
 			int numbytes = nBitsLeft >> 3; 
 			int numbits = numbytes << 3;
 
-			Q_memcpy( m_pData+(m_iCurBit>>3), pIn, numbytes );
+			memcpy( m_pData+(m_iCurBit>>3), pIn, numbytes );
 			pIn += numbytes;
 			nBitsLeft -= numbits;
 			m_iCurBit += numbits;
@@ -542,7 +518,7 @@ bool bf_write::WriteBits(const void *pInData, int nBits)
 		else 
 		{
 			const uint32 iBitsRight = (m_iCurBit & 31);
-			Assert( iBitsRight > 0 ); // should not be aligned, otherwise it would have been handled before
+			//Assert( iBitsRight > 0 ); // should not be aligned, otherwise it would have been handled before
 			const uint32 iBitsLeft = 32 - iBitsRight; 	
 			const int iBitsChanging = 32 + iBitsLeft; // how many bits are changed during one step (not necessary written meaningful)
 			unsigned int iDWord = m_iCurBit >> 5;
@@ -693,8 +669,8 @@ void bf_write::WriteBitCellCoord( const float f, int bits, EBitCoordType coordTy
 #if defined( BB_PROFILING )
 	VPROF( "bf_write::WriteBitCellCoord" );
 #endif
-	Assert( f >= 0.0f ); // cell coords can't be negative
-	Assert( f < ( 1 << bits ) );
+	//Assert( f >= 0.0f ); // cell coords can't be negative
+	//Assert( f < ( 1 << bits ) );
 
 	bool bIntegral = ( coordType == kCW_Integral );
 	bool bLowPrecision = ( coordType == kCW_LowPrecision );  
@@ -755,32 +731,32 @@ void bf_write::WriteBitFloat(float val)
 {
 	int32 intVal;
 
-	Assert(sizeof(int32) == sizeof(float));
-	Assert(sizeof(float) == 4);
+	//Assert(sizeof(int32) == sizeof(float));
+	//Assert(sizeof(float) == 4);
 
 	intVal = *((int32*)&val);
 	WriteUBitLong( intVal, 32 );
 }
 
-void bf_write::WriteBitVec3Coord( const Vector& fa )
-{
-	int		xflag, yflag, zflag;
-
-	xflag = (fa[0] >= COORD_RESOLUTION) || (fa[0] <= -COORD_RESOLUTION);
-	yflag = (fa[1] >= COORD_RESOLUTION) || (fa[1] <= -COORD_RESOLUTION);
-	zflag = (fa[2] >= COORD_RESOLUTION) || (fa[2] <= -COORD_RESOLUTION);
-
-	WriteOneBit( xflag );
-	WriteOneBit( yflag );
-	WriteOneBit( zflag );
-
-	if ( xflag )
-		WriteBitCoord( fa[0] );
-	if ( yflag )
-		WriteBitCoord( fa[1] );
-	if ( zflag )
-		WriteBitCoord( fa[2] );
-}
+//void bf_write::WriteBitVec3Coord( const Vector& fa )
+//{
+//	int		xflag, yflag, zflag;
+//
+//	xflag = (fa[0] >= COORD_RESOLUTION) || (fa[0] <= -COORD_RESOLUTION);
+//	yflag = (fa[1] >= COORD_RESOLUTION) || (fa[1] <= -COORD_RESOLUTION);
+//	zflag = (fa[2] >= COORD_RESOLUTION) || (fa[2] <= -COORD_RESOLUTION);
+//
+//	WriteOneBit( xflag );
+//	WriteOneBit( yflag );
+//	WriteOneBit( zflag );
+//
+//	if ( xflag )
+//		WriteBitCoord( fa[0] );
+//	if ( yflag )
+//		WriteBitCoord( fa[1] );
+//	if ( zflag )
+//		WriteBitCoord( fa[2] );
+//}
 
 void bf_write::WriteBitNormal( float f )
 {
@@ -800,32 +776,32 @@ void bf_write::WriteBitNormal( float f )
 	WriteUBitLong( fractval, NORMAL_FRACTIONAL_BITS );
 }
 
-void bf_write::WriteBitVec3Normal( const Vector& fa )
-{
-	int		xflag, yflag;
+//void bf_write::WriteBitVec3Normal( const Vector& fa )
+//{
+//	int		xflag, yflag;
+//
+//	xflag = (fa[0] >= NORMAL_RESOLUTION) || (fa[0] <= -NORMAL_RESOLUTION);
+//	yflag = (fa[1] >= NORMAL_RESOLUTION) || (fa[1] <= -NORMAL_RESOLUTION);
+//
+//	WriteOneBit( xflag );
+//	WriteOneBit( yflag );
+//
+//	if ( xflag )
+//		WriteBitNormal( fa[0] );
+//	if ( yflag )
+//		WriteBitNormal( fa[1] );
+//	
+//	// Write z sign bit
+//	int	signbit = (fa[2] <= -NORMAL_RESOLUTION);
+//	WriteOneBit( signbit );
+//}
 
-	xflag = (fa[0] >= NORMAL_RESOLUTION) || (fa[0] <= -NORMAL_RESOLUTION);
-	yflag = (fa[1] >= NORMAL_RESOLUTION) || (fa[1] <= -NORMAL_RESOLUTION);
-
-	WriteOneBit( xflag );
-	WriteOneBit( yflag );
-
-	if ( xflag )
-		WriteBitNormal( fa[0] );
-	if ( yflag )
-		WriteBitNormal( fa[1] );
-	
-	// Write z sign bit
-	int	signbit = (fa[2] <= -NORMAL_RESOLUTION);
-	WriteOneBit( signbit );
-}
-
-void bf_write::WriteBitAngles( const QAngle& fa )
-{
-	// FIXME:
-	Vector tmp( fa.x, fa.y, fa.z );
-	WriteBitVec3Coord( tmp );
-}
+//void bf_write::WriteBitAngles( const QAngle& fa )
+//{
+//	// FIXME:
+//	Vector tmp( fa.x, fa.y, fa.z );
+//	WriteBitVec3Coord( tmp );
+//}
 
 void bf_write::WriteChar(int val)
 {
@@ -918,7 +894,6 @@ bool bf_write::WriteString(const wchar_t *pStr)
 
 old_bf_read::old_bf_read()
 {
-	DEBUG_LINK_CHECK;
 	m_pData = NULL;
 	m_nDataBytes = 0;
 	m_nDataBits = -1; // set to -1 so we overflow on any operation
@@ -944,7 +919,7 @@ old_bf_read::old_bf_read( const char *pDebugName, const void *pData, int nBytes,
 void old_bf_read::StartReading( const void *pData, int nBytes, int iStartBit, int nBits )
 {
 	// Make sure we're dword aligned.
-	Assert(((uintp)pData & 3) == 0);
+	//Assert(((uintp)pData & 3) == 0);
 
 	m_pData = (unsigned char*)pData;
 	m_nDataBytes = nBytes;
@@ -955,7 +930,7 @@ void old_bf_read::StartReading( const void *pData, int nBytes, int iStartBit, in
 	}
 	else
 	{
-		Assert( nBits <= nBytes*8 );
+		//Assert( nBits <= nBytes*8 );
 		m_nDataBits = nBits;
 	}
 
@@ -1161,16 +1136,16 @@ unsigned int old_bf_read::ReadUBitVar()
 	{
 		case 16:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 4 ) << 4 );
-			Assert( ret >= 16);
+			//Assert( ret >= 16);
 			break;
 				
 		case 32:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 8 ) << 4 );
-			Assert( ret >= 256);
+			//Assert( ret >= 256);
 			break;
 		case 48:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 32 - 4 ) << 4 );
-			Assert( ret >= 4096 );
+			//Assert( ret >= 4096 );
 			break;
 	}
 	return ret;
@@ -1200,7 +1175,7 @@ uint32 old_bf_read::ReadVarInt32()
 		{
 			// If we get here it means that the fifth bit had its
 			// high bit set, which implies corrupt data.
-			Assert( 0 );
+			//Assert( 0 );
 			return result;
 		}
 		b = ReadUBitLong( 8 );
@@ -1385,25 +1360,25 @@ float old_bf_read::ReadBitCellCoord( int bits, EBitCoordType coordType )
 }
 
 
-void old_bf_read::ReadBitVec3Coord( Vector& fa )
-{
-	int		xflag, yflag, zflag;
-
-	// This vector must be initialized! Otherwise, If any of the flags aren't set, 
-	// the corresponding component will not be read and will be stack garbage.
-	fa.Init( 0, 0, 0 );
-
-	xflag = ReadOneBit();
-	yflag = ReadOneBit(); 
-	zflag = ReadOneBit();
-
-	if ( xflag )
-		fa[0] = ReadBitCoord();
-	if ( yflag )
-		fa[1] = ReadBitCoord();
-	if ( zflag )
-		fa[2] = ReadBitCoord();
-}
+//void old_bf_read::ReadBitVec3Coord( Vector& fa )
+//{
+//	int		xflag, yflag, zflag;
+//
+//	// This vector must be initialized! Otherwise, If any of the flags aren't set, 
+//	// the corresponding component will not be read and will be stack garbage.
+//	fa.Init( 0, 0, 0 );
+//
+//	xflag = ReadOneBit();
+//	yflag = ReadOneBit(); 
+//	zflag = ReadOneBit();
+//
+//	if ( xflag )
+//		fa[0] = ReadBitCoord();
+//	if ( yflag )
+//		fa[1] = ReadBitCoord();
+//	if ( zflag )
+//		fa[2] = ReadBitCoord();
+//}
 
 float old_bf_read::ReadBitNormal (void)
 {
@@ -1423,40 +1398,40 @@ float old_bf_read::ReadBitNormal (void)
 	return value;
 }
 
-void old_bf_read::ReadBitVec3Normal( Vector& fa )
-{
-	int xflag = ReadOneBit();
-	int yflag = ReadOneBit(); 
+//void old_bf_read::ReadBitVec3Normal( Vector& fa )
+//{
+//	int xflag = ReadOneBit();
+//	int yflag = ReadOneBit(); 
+//
+//	if (xflag)
+//		fa[0] = ReadBitNormal();
+//	else
+//		fa[0] = 0.0f;
+//
+//	if (yflag)
+//		fa[1] = ReadBitNormal();
+//	else
+//		fa[1] = 0.0f;
+//
+//	// The first two imply the third (but not its sign)
+//	int znegative = ReadOneBit();
+//
+//	float fafafbfb = fa[0] * fa[0] + fa[1] * fa[1];
+//	if (fafafbfb < 1.0f)
+//		fa[2] = sqrt( 1.0f - fafafbfb );
+//	else
+//		fa[2] = 0.0f;
+//
+//	if (znegative)
+//		fa[2] = -fa[2];
+//}
 
-	if (xflag)
-		fa[0] = ReadBitNormal();
-	else
-		fa[0] = 0.0f;
-
-	if (yflag)
-		fa[1] = ReadBitNormal();
-	else
-		fa[1] = 0.0f;
-
-	// The first two imply the third (but not its sign)
-	int znegative = ReadOneBit();
-
-	float fafafbfb = fa[0] * fa[0] + fa[1] * fa[1];
-	if (fafafbfb < 1.0f)
-		fa[2] = sqrt( 1.0f - fafafbfb );
-	else
-		fa[2] = 0.0f;
-
-	if (znegative)
-		fa[2] = -fa[2];
-}
-
-void old_bf_read::ReadBitAngles( QAngle& fa )
-{
-	Vector tmp;
-	ReadBitVec3Coord( tmp );
-	fa.Init( tmp.x, tmp.y, tmp.z );
-}
+//void old_bf_read::ReadBitAngles( QAngle& fa )
+//{
+//	Vector tmp;
+//	ReadBitVec3Coord( tmp );
+//	fa.Init( tmp.x, tmp.y, tmp.z );
+//}
 
 int old_bf_read::ReadChar()
 {
@@ -1500,7 +1475,7 @@ int64 old_bf_read::ReadLongLong()
 float old_bf_read::ReadFloat()
 {
 	float ret;
-	Assert( sizeof(ret) == 4 );
+	//Assert( sizeof(ret) == 4 );
 	ReadBits(&ret, 32);
 
 	// Swap the float, since ReadBits reads raw data
@@ -1516,7 +1491,7 @@ bool old_bf_read::ReadBytes(void *pOut, int nBytes)
 
 bool old_bf_read::ReadString( char *pStr, int maxLen, bool bLine, int *pOutNumChars )
 {
-	Assert( maxLen != 0 );
+	//Assert( maxLen != 0 );
 
 	bool bTooSmall = false;
 	int iChar = 0;
@@ -1540,7 +1515,7 @@ bool old_bf_read::ReadString( char *pStr, int maxLen, bool bLine, int *pOutNumCh
 	}
 
 	// Make sure it's null-terminated.
-	Assert( iChar < maxLen );
+	//Assert( iChar < maxLen );
 	pStr[iChar] = 0;
 
 	if ( pOutNumChars )
@@ -1551,13 +1526,13 @@ bool old_bf_read::ReadString( char *pStr, int maxLen, bool bLine, int *pOutNumCh
 
 bool old_bf_read::ReadWString( wchar_t *pStr, int maxLen, bool bLine, int *pOutNumChars )
 {
-	Assert( maxLen != 0 );
+	//Assert( maxLen != 0 );
 
 	bool bTooSmall = false;
 	int iChar = 0;
 	while(1)
 	{
-		wchar val = ReadShort();
+		wchar_t val = ReadShort();
 		if ( val == 0 )
 			break;
 		else if ( bLine && val == L'\n' )
@@ -1575,7 +1550,7 @@ bool old_bf_read::ReadWString( wchar_t *pStr, int maxLen, bool bLine, int *pOutN
 	}
 
 	// Make sure it's null-terminated.
-	Assert( iChar < maxLen );
+	//Assert( iChar < maxLen );
 	pStr[iChar] = 0;
 
 	if ( pOutNumChars )

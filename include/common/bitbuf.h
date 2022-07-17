@@ -15,22 +15,13 @@
 #pragma once
 #endif
 
+#include "platform.h"
 
-#include "mathlib/mathlib.h"
-#include "mathlib/vector.h"
-#include "basetypes.h"
-#include "tier0/platform.h"
-#include "tier0/dbg.h"
-#include "annotations.h"
+#define OUT_Z_CAP(x) _Out_z_cap_(x)
 
-
-
-//-----------------------------------------------------------------------------
-// Forward declarations.
-//-----------------------------------------------------------------------------
-
-class Vector;
-class QAngle;
+#ifndef MIN
+#define MIN( a, b ) ( ( ( a ) < ( b ) ) ? ( a ) : ( b ) )
+#endif
 
 //-----------------------------------------------------------------------------
 // You can define a handler function that will be called in case of 
@@ -218,11 +209,7 @@ public:
 	void			WriteBitCoordMP( const float f, EBitCoordType coordType );
 	void 			WriteBitCellCoord( const float f, int bits, EBitCoordType coordType );
 	void			WriteBitFloat(float val);
-	void			WriteBitVec3Coord( const Vector& fa );
 	void			WriteBitNormal( float f );
-	void			WriteBitVec3Normal( const Vector& fa );
-	void			WriteBitAngles( const QAngle& fa );
-
 
 // Byte functions.
 public:
@@ -333,7 +320,7 @@ inline void bf_write::SetOverflowFlag()
 {
 	if ( m_bAssertOnOverflow )
 	{
-		Assert( false );
+		//Assert( false );
 	}
 
 	m_bOverflow = true;
@@ -383,7 +370,7 @@ inline void bf_write::WriteUBitLong( unsigned int curData, int numbits, bool bCh
 			CallErrorHandler( BITBUFERROR_VALUE_OUT_OF_RANGE, GetDebugName() );
 		}
 	}
-	Assert( numbits >= 0 && numbits <= 32 );
+	//Assert( numbits >= 0 && numbits <= 32 );
 #endif
 
 	extern uint32 g_BitWriteMasks[32][33];
@@ -402,7 +389,7 @@ inline void bf_write::WriteUBitLong( unsigned int curData, int numbits, bool bCh
 
 	// Mask in a dword.
 	unsigned int iDWord = iCurBit >> 5;
-	Assert( (iDWord*4 + sizeof(int32)) <= (unsigned int)m_nDataBytes );
+	//Assert( (iDWord*4 + sizeof(int32)) <= (unsigned int)m_nDataBytes );
 
 	uint32 iCurBitMasked = iCurBit & 31;
 
@@ -535,9 +522,6 @@ public:
 	float 			ReadBitCellCoord( int bits, EBitCoordType coordType );
 	float			ReadBitFloat();
 	float			ReadBitNormal();
-	void			ReadBitVec3Coord( Vector& fa );
-	void			ReadBitVec3Normal( Vector& fa );
-	void			ReadBitAngles( QAngle& fa );
 
 
 // Byte functions (these still read data in bit-by-bit).
@@ -641,7 +625,7 @@ inline void old_bf_read::SetOverflowFlag()
 {
 	if ( m_bAssertOnOverflow )
 	{
-		Assert( false );
+		//Assert( false );
 	}
 
 	m_bOverflow = true;
@@ -695,8 +679,8 @@ inline float old_bf_read::ReadBitFloat()
 {
 	int32 val;
 
-	Assert(sizeof(float) == sizeof(int32));
-	Assert(sizeof(float) == 4);
+	//Assert(sizeof(float) == sizeof(int32));
+	//Assert(sizeof(float) == 4);
 
 	if(CheckForOverflow(32))
 		return 0.0f;
@@ -725,7 +709,7 @@ inline unsigned int old_bf_read::ReadUBitLong( int numbits )
 		return 0;
 	}
 
-	Assert( numbits > 0 && numbits <= 32 );
+	//Assert( numbits > 0 && numbits <= 32 );
 
 	// Read the current dword.
 	int idword1 = m_iCurBit >> 5;
@@ -827,7 +811,7 @@ public:
 	~CBitWrite( void )
 	{
 		TempFlush();
-		Assert( (! m_pData ) || m_bFlushed );
+		//Assert( (! m_pData ) || m_bFlushed );
 	}
 	FORCEINLINE int GetNumBitsLeft( void ) const
 	{
@@ -933,10 +917,10 @@ public:
 	void WriteBitCoord (const float f);
 	void WriteBitCoordMP( const float f, EBitCoordType coordType );
 	void WriteBitCellCoord( const float f, int bits, EBitCoordType coordType );
-	void WriteBitVec3Coord( const Vector& fa );
+	//void WriteBitVec3Coord( const Vector& fa );
 	void WriteBitNormal( float f );
-	void WriteBitVec3Normal( const Vector& fa );
-	void WriteBitAngles( const QAngle& fa );
+	//void WriteBitVec3Normal( const Vector& fa );
+	//void WriteBitAngles( const QAngle& fa );
 
 	// Copy the bits straight out of pIn. This seeks pIn forward by nBits.
 	// Returns an error if this buffer or the read buffer overflows.
@@ -1002,9 +986,9 @@ FORCEINLINE void CBitWrite::WriteUBitLong( unsigned int nData, int nNumBits, boo
 	// Make sure it doesn't overflow.
 	if ( bCheckRange && nNumBits < 32 )
 	{
-		Assert( nData <= (uint32)(1 << nNumBits ) );
+		//Assert( nData <= (uint32)(1 << nNumBits ) );
 	}
-	Assert( nNumBits >= 0 && nNumBits <= 32 );
+	//Assert( nNumBits >= 0 && nNumBits <= 32 );
 #endif
 	if ( nNumBits <= m_nOutBitsAvail )
 	{
@@ -1135,9 +1119,6 @@ public:
 	float ReadBitCoordMP( EBitCoordType coordType );
 	float ReadBitCellCoord( int bits, EBitCoordType coordType );
 	float ReadBitNormal();
-	void ReadBitVec3Coord( Vector& fa );
-	void ReadBitVec3Normal( Vector& fa );
-	void ReadBitAngles( QAngle& fa );
 	bool ReadBytes(void *pOut, int nBytes);
 	float ReadBitAngle( int numbits );
 
@@ -1213,7 +1194,7 @@ FORCEINLINE void CBitRead::GrabNextDWord( bool bOverFlowImmediately )
 		}
 		else
 		{
-			Assert( reinterpret_cast<intp>(m_pDataIn) + 3 < reinterpret_cast<intp>(m_pBufferEnd));
+			//Assert( reinterpret_cast<intp>(m_pDataIn) + 3 < reinterpret_cast<intp>(m_pBufferEnd));
 			m_nInBufWord = LittleDWord( *( m_pDataIn++ ) );
 		}
 }
@@ -1312,16 +1293,16 @@ FORCEINLINE unsigned int CBitRead::ReadUBitVar( void )
 	{
 		case 16:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 4 ) << 4 );
-			Assert( ret >= 16);
+			//Assert( ret >= 16);
 			break;
 				
 		case 32:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 8 ) << 4 );
-			Assert( ret >= 256);
+			//Assert( ret >= 256);
 			break;
 		case 48:
 			ret = ( ret & 15 ) | ( ReadUBitLong( 32 - 4 ) << 4 );
-			Assert( ret >= 4096 );
+			//Assert( ret >= 4096 );
 			break;
 	}
 	return ret;
@@ -1372,6 +1353,48 @@ public:																														  \
 	{																														  \
 	}																														  \
 };
+
+#define BITS_PER_INT		32
+inline int GetBitForBitnum(int bitNum)
+{
+	static int bitsForBitnum[] =
+	{
+		(1 << 0),
+		(1 << 1),
+		(1 << 2),
+		(1 << 3),
+		(1 << 4),
+		(1 << 5),
+		(1 << 6),
+		(1 << 7),
+		(1 << 8),
+		(1 << 9),
+		(1 << 10),
+		(1 << 11),
+		(1 << 12),
+		(1 << 13),
+		(1 << 14),
+		(1 << 15),
+		(1 << 16),
+		(1 << 17),
+		(1 << 18),
+		(1 << 19),
+		(1 << 20),
+		(1 << 21),
+		(1 << 22),
+		(1 << 23),
+		(1 << 24),
+		(1 << 25),
+		(1 << 26),
+		(1 << 27),
+		(1 << 28),
+		(1 << 29),
+		(1 << 30),
+		(1 << 31),
+	};
+
+	return bitsForBitnum[(bitNum) & (BITS_PER_INT - 1)];
+}
 
 #if 0
 

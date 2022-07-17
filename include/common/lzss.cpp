@@ -5,16 +5,12 @@
 //
 //=====================================================================================//
 
-#include "tier0/platform.h"
-#include "tier0/dbg.h"
-#include "tier1/lzss.h"
-#include "tier1/utlbuffer.h"
+#include "lzss.h"
+#include "platform.h"
+#include <stdio.h>
 
 #define LZSS_LOOKSHIFT		4
 #define LZSS_LOOKAHEAD		( 1 << LZSS_LOOKSHIFT )
-
-// memdbgon must be the last include file in a .cpp file!!!
-#include "tier0/memdbgon.h"
 
 //-----------------------------------------------------------------------------
 // Returns true if buffer is compressed.
@@ -183,7 +179,6 @@ unsigned char *CLZSS::CompressNoAlloc( unsigned char *pInput, int inputLength, u
 	if ( inputLength != 0 )
 	{
 		// unexpected failure
-		Assert( 0 );
 		return NULL;
 	}
 
@@ -355,7 +350,6 @@ unsigned int CLZSS::SafeUncompress( unsigned char *pInput, unsigned char *pOutpu
 	{
 		// unexpected failure
 		printf("Failed! totalBytes:%d, actual size: %d\n", totalBytes, actualSize);
-		Assert( 0 );
 		return 0;
 	}
 
@@ -416,7 +410,6 @@ unsigned int CLZSS::Uncompress( unsigned char *pInput, unsigned char *pOutput )
 	if ( totalBytes != actualSize )
 	{
 		// unexpected failure
-		Assert( 0 );
 		return 0;
 	}
 
