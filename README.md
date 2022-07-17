@@ -20,6 +20,9 @@
 4. Set the directory constains your executable to LD_LIBRARY_PATH.
 5. Run `tiny-csgo-client` with necessary commandline.
 
+## FAQ
+### 1. Running multiple clients at the same time.
+The easiest way of doing this is to use the [limited version here](https://github.com/yourmnbbn/tiny-csgo-client/tree/limited). See the documentation in that branch. 
 
 ## Credit
 Thanks to [Leystryku](https://github.com/Leystryku), [his project](https://github.com/Leystryku/leysourceengineclient) has made a great example.
