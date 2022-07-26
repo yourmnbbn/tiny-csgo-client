@@ -4,6 +4,7 @@
 #ifdef _WIN32
 #pragma once
 #pragma warning(disable : 4100)	// unreferenced formal parameter
+#pragma comment(linker, "/STACK:9216000") // For NET_MAX_PAYLOAD update
 #endif
 
 #include <inetmessage.h>
@@ -12,7 +13,8 @@
 //The interface in the hl2sdk is outdated, this is from the cstrike15_src
 #include "inetchannelinfo.h"
 
-#define	NET_MAX_PAYLOAD			( 262144 - 4)
+//Updated from engine binary(13835)
+#define	NET_MAX_PAYLOAD			0xFFFFB 
 
 template< int msgType, typename PB_OBJECT_TYPE, int groupType = INetChannelInfo::GENERIC, bool bReliable = true >
 class CNetMessagePB : public INetMessage, public PB_OBJECT_TYPE
