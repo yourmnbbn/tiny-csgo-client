@@ -53,14 +53,13 @@ bool CUserMsgHandler::HandleUserMessage(int msgType, const void* data, size_t le
 	{
 		auto sayText2 = usermsg_cast<CCSUsrMsg_SayText2>(data, length);
 		int client = sayText2.ent_idx();
-		printf("SayText2 : name: %s %s<Client %d>\n", 
-			sayText2.msg_name().c_str(), sayText2.params(0).c_str(), client);
+		printf("SayText2<type: %s> Playere: %s<index %d> : %s\n", 
+			sayText2.msg_name().c_str(), sayText2.params(0).c_str(), client, sayText2.params(1).c_str());
 		return true;
 	}
 	case CS_UM_TextMsg:
 	{
 		auto textMsg = usermsg_cast<CCSUsrMsg_TextMsg>(data, length);
-		printf("Receive CCSUsrMsg_TextMsg\n");
 		for (int i = 0; i < 5; ++i)
 		{
 			if(textMsg.params(i).c_str()[0])
