@@ -1350,9 +1350,7 @@ bool Client::CheckReceivingList(int nList)
 	}
 	else
 	{
-		//FIX ME!!!
-		//Although this could let us read more messages, but still some of the message is broken.
-		//But at least we can handle the server changelevel and some saytext.
+		//Uncompressed message is somehow encoded
 		DecodeFragments(data->buffer, data->bytes);
 	}
 
@@ -1580,6 +1578,18 @@ void Client::DecodeFragments(void* pvData, size_t nLength)
 		uint8_t encoded = data[i];
 		uint8_t mod = encoded % 4;
 		data[i] = mod ? ((1 << (5 + mod)) + (encoded - mod) / 4) : (encoded / 4);
+	}
+
+	for (size_t i = 0; i < nLength; i++)
+	{
+		if (i == nLength - 1)
+			continue;
+
+		if (data[i] < 64 && data[i + 1] >= 64)
+			data[i] += 64;
+
+		if (data[i] >= 64 && data[i + 1] < 64)
+			data[i] -= 64;
 	}
 }
 
