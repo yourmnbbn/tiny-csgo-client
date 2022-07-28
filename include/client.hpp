@@ -35,6 +35,7 @@
 #include "netmessage/usermsghandler.hpp"
 
 #include "argparser.hpp"
+#include "GCClient.hpp"
 
 #define BYTES2FRAGMENTS(i) ((i+FRAGMENT_SIZE-1)/FRAGMENT_SIZE)
 
@@ -778,6 +779,9 @@ bool Client::PrepareSteamAPI()
 		printf("Cannot initialize ISteamUser interface\n");
 		return false;
 	}
+
+	g_GCClient.Init();
+	g_GCClient.SendHello();
 
 	return true;
 }
