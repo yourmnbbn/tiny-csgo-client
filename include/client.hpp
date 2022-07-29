@@ -1069,6 +1069,12 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 	printf("Get server challenge number : 0x%X, auth prorocol: 0x%02X, server steam: %llu, vac %s, dcFriendsReqd %u, officialValveServer %u\n",
 		challenge, auth_protocol_version, server_steamid, vac ? "on" : "off", dcFriendsReqd, officialValveServer);
 
+	if (!m_nServerReservationCookie && !m_ArgParser.HasOption("-ticket"))
+	{
+		m_nServerReservationCookie = g_GCClient.GetServerReservationId(server_steamid, 
+			make_address_v4(m_Ip).to_uint(), m_Port, connect_protocol_version);
+	}
+
 	co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(true,
 		(uint32_t)challenge, (uint32_t)auth_protocol_version, (uint32_t)connect_protocol_version);
 }
@@ -1346,7 +1352,7 @@ bool Client::CheckReceivingList(int nList)
 	}
 
 	// got all fragments
-	printf("Receiving complete: %i fragments, %i bytes\n", data->numFragments, data->bytes);
+	//printf("Receiving complete: %i fragments, %i bytes\n", data->numFragments, data->bytes);
 
 	if (data->isCompressed)
 	{
