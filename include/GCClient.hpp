@@ -99,6 +99,7 @@ void GCClient::SendHello()
 				if (eResult != k_EGCResultOK)
 				{
 				    printf("Error RetrieveGCMessage(%d): %d\n", msgType && 0xFFFF, eResult);
+					return;
 				}
 
 				if (!(msgType & PROTO_FLAG))
@@ -148,7 +149,6 @@ uint64_t GCClient::GetServerReservationId(uint64_t serverid, uint32_t serverip, 
 	uint32_t size;
 	uint32_t msgType;
 	uint32_t retry = 0;
-	bool success = false;
 	while (true)
 	{
 		while (m_pGameCoordinator->IsMessageAvailable(&size))
@@ -158,6 +158,7 @@ uint64_t GCClient::GetServerReservationId(uint64_t serverid, uint32_t serverip, 
 			if (eResult != k_EGCResultOK)
 			{
 				printf("Error RetrieveGCMessage(%d): %d\n", msgType && 0xFFFF, eResult);
+				return 0;
 			}
 
 			if (!(msgType & PROTO_FLAG))
