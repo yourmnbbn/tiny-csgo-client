@@ -20,6 +20,16 @@
 4. Set the directory constains your executable to LD_LIBRARY_PATH.
 5. Run `tiny-csgo-client` with necessary commandline.
 
+## Command option notes
+- `-ip` Game server IP
+- `-port` Game server port.
+- `-pw` Game server password.
+- `-name` Nickname of your client.
+- `-cport` Client port you want to use.
+- `-ticket` Use custom ticket to connect to server.
+- `-ts` Connect to [tiny-csgo-server](https://github.com/yourmnbbn/tiny-csgo-server) and authenticate your ticket.
+
+
 ## FAQ
 ### 1. Running multiple clients at the same time.
 The easiest way of doing this is to use the [limited version here](https://github.com/yourmnbbn/tiny-csgo-client/tree/limited). See the documentation in that branch. 

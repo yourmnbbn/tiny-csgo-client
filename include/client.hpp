@@ -985,10 +985,25 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 	m_WriteBuf.WriteLong(-1);
 	m_WriteBuf.WriteByte(A2S_GETCHALLENGE);
 
-	auto numBytesWritten = m_WriteBuf.GetNumBytesWritten();
-	auto len = snprintf((char*)(m_Buf + numBytesWritten), sizeof(m_Buf) - numBytesWritten, "connect0x%08X", cached_challenge);
+	if (m_ArgParser.HasOption("-ts"))
+	{
+		m_WriteBuf.WriteString("tiny-csgo-client");
 
-	co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten() + len + 1), remote_endpoint, asio::use_awaitable);
+		unsigned char steamkey[STEAM_KEYSIZE];
+		unsigned int keysize = 0;
+		SteamUser()->GetAuthSessionTicket(steamkey, STEAM_KEYSIZE, &keysize);
+
+		m_WriteBuf.WriteShort(keysize);
+		m_WriteBuf.WriteBytes(steamkey, keysize);
+
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten()), remote_endpoint, asio::use_awaitable);
+	}
+	else
+	{
+		auto numBytesWritten = m_WriteBuf.GetNumBytesWritten();
+		auto len = snprintf((char*)(m_Buf + numBytesWritten), sizeof(m_Buf) - numBytesWritten, "connect0x%08X", cached_challenge);
+		co_await socket.async_send_to(asio::buffer(m_Buf, m_WriteBuf.GetNumBytesWritten() + len + 1), remote_endpoint, asio::use_awaitable);
+	}
 
 	asio::steady_timer timer(g_IoContext, 2s);
 	asio::co_spawn(g_IoContext,
@@ -1021,8 +1036,23 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 
 	//Read information from buffer
 	ResetReadBuffer();
-	if (m_ReadBuf.ReadLong() != -1 || m_ReadBuf.ReadByte() != S2C_CHALLENGE)
+	if (m_ReadBuf.ReadLong() != -1)
 		co_return failed_obj;
+
+	if (m_ArgParser.HasOption("-ts"))
+	{
+		if(m_ReadBuf.ReadByte() != S2C_CONNECTION)
+			co_return failed_obj;
+
+		printf("Successfully connect to tiny csgo server, close this program will cause ticket being calcelled.\n");
+		co_await HandleIncomingPacket(socket, remote_endpoint);
+		g_IoContext.stop();
+	}
+	else
+	{
+		if(m_ReadBuf.ReadByte() != S2C_CHALLENGE)
+			co_return failed_obj;
+	}
 
 	auto challenge = m_ReadBuf.ReadLong();
 	auto auth_protocol_version = m_ReadBuf.ReadLong();
@@ -1101,15 +1131,20 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 		co_await SendRawDatagramBuffer(socket, remote_endpoint);
 
 		asio::steady_timer timer(g_IoContext, 25s);
-		asio::co_spawn(g_IoContext,
-			[=, &socket, &timer]() -> asio::awaitable<void> {
-				co_await timer.async_wait(asio::use_awaitable);
-				printf("Connection timeout! (25s)\n");
-				socket.close();
-				g_IoContext.stop();
-			},
-			asio::detached
-				);
+
+		//So far we don't communicate with the tiny csgo server
+		if (!m_ArgParser.HasOption("-ts"))
+		{
+			asio::co_spawn(g_IoContext,
+				[=, &socket, &timer]() -> asio::awaitable<void> {
+					co_await timer.async_wait(asio::use_awaitable);
+					printf("Connection timeout! (25s)\n");
+					socket.close();
+					g_IoContext.stop();
+				},
+				asio::detached
+					);
+		}
 
 		co_await socket.async_wait(socket.wait_read, asio::use_awaitable);
 		size_t length = co_await socket.async_receive_from(asio::buffer(m_Buf), remote_endpoint, asio::use_awaitable);

@@ -22,6 +22,7 @@ enum class OptionAttr : uint8_t
 
 enum class OptionValueType : uint8_t
 {
+	None,
 	INT8,
 	INT8U,
 	INT16,
@@ -62,7 +63,7 @@ class ArgParser
 public:
 
 	//We don't have duplication check, so don't add duplicated options.
-	void AddOption(const char* option, const char* descriptionOptionAttr, OptionAttr optionAttr, OptionValueType type, const char* defaultstr = "", uint64_t defaultint = 0)
+	void AddOption(const char* option, const char* descriptionOptionAttr, OptionAttr optionAttr, OptionValueType type = OptionValueType::None, const char* defaultstr = "", uint64_t defaultint = 0)
 	{
 		m_Options.push_back({ option, descriptionOptionAttr, optionAttr, type, defaultstr, defaultint });
 	}
