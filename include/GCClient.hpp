@@ -201,7 +201,7 @@ bool GCClient::SendMessageToGC(uint32_t type, google::protobuf::Message& msg)
 	header->m_nSrcGCDirIndex = GCProtoBufMsgSrc_Unspecified;
 
 	msg.SerializeToArray(memBlock.get() + sizeof(GCMsgHdr_t), size - sizeof(GCMsgHdr_t));
-	return m_pGameCoordinator->SendMessageA(type, memBlock.get(), size) == k_EGCResultOK;
+	return m_pGameCoordinator->SendMessage(type, memBlock.get(), size) == k_EGCResultOK;
 }
 
 void GCClient::ProcessWelcomeMessage(char* pData, size_t length)
