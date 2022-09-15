@@ -8,6 +8,8 @@ include_directories (
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${HL2SDK-CSGO}/common/protobuf-2.5.0/src
     ${ASIO-SRC}/include
+    ${HL2SDK-CSGO}/public
+    ${HL2SDK-CSGO}/public/engine/protobuf
 )
 
 link_directories(${HL2SDK-CSGO}/lib/public)
