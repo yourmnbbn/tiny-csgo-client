@@ -869,6 +869,10 @@ asio::awaitable<void> Client::StartConnectProcess(udp::socket& socket, udp::endp
 		}
 	}
 	
+	//We received redirect instruction in SendConnectPacket response
+	if (m_flagRetry)
+		co_return;
+
 	//Connection has been established, it's time to use network channel to communicate, should never return
 	co_await HandleIncomingPacket(socket, remote_endpoint);
 }
@@ -952,8 +956,34 @@ asio::awaitable<bool> Client::SendConnectPacket(
 		char err[256];
 		m_ReadBuf.ReadString(err, sizeof(err));
 
-		printf("Connection refused! - %s\n", err);
-		co_return false;
+		//Probably we receive S2C_CONNREJECT because server wants to redirect
+		if (strncmp(err, "ConnectRedirectAddress:", 23) == 0)
+		{
+			auto sock = std::string(reinterpret_cast<char*>(err + 23));
+			auto pos = sock.find(':');
+
+			if (pos == std::string::npos)
+			{
+				printf("Can't resolve redirecting address: %s\n", err);
+				co_return false;
+			}
+
+			//Extract ip and port from a socket string
+			*reinterpret_cast<uint8_t*>(err + 23 + pos) = 0;
+			m_Port = atoi(reinterpret_cast<char*>(err + 23 + pos + 1));
+			m_Ip = std::string(reinterpret_cast<char*>(err + 23));
+
+			printf("Target server wants us to redirect to %s:%d\n", m_Ip.c_str(), m_Port);
+			m_flagRetry = true;
+
+			//Later we'll check the flag and do the redirect
+			co_return true;
+		}
+		else
+		{
+			printf("Connection refused! - %s\n", err);
+			co_return false;
+		}
 
 	case S2C_CONNECTION:
 		//Tell server that we are connected, ready to receive netmessages
@@ -1091,11 +1121,8 @@ asio::awaitable<std::tuple<bool, uint32_t, uint32_t, uint32_t>> Client::GetChall
 	printf("Get server challenge number : 0x%X, auth prorocol: 0x%02X, server steam: %llu, vac %s, dcFriendsReqd %u, officialValveServer %u\n",
 		challenge, auth_protocol_version, server_steamid, vac ? "on" : "off", dcFriendsReqd, officialValveServer);
 
-	if (!m_nServerReservationCookie && !m_ArgParser.HasOption("-ticket"))
-	{
-		m_nServerReservationCookie = g_GCClient.GetServerReservationId(server_steamid, 
-			make_address_v4(m_Ip).to_uint(), m_Port, connect_protocol_version);
-	}
+	m_nServerReservationCookie = g_GCClient.GetServerReservationId(server_steamid, 
+		make_address_v4(m_Ip).to_uint(), m_Port, connect_protocol_version);
 
 	co_return std::make_tuple<bool, uint32_t, uint32_t, uint32_t>(true,
 		(uint32_t)challenge, (uint32_t)auth_protocol_version, (uint32_t)connect_protocol_version);

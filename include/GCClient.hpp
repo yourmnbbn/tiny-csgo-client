@@ -133,6 +133,20 @@ void GCClient::SendHello()
 
 uint64_t GCClient::GetServerReservationId(uint64_t serverid, uint32_t serverip, uint16_t serverport, uint32_t version)
 {
+	uint32_t size;
+	uint32_t msgType;
+	uint32_t retry = 0;
+
+	//Incase we have unhandled message, clear the cache
+	if (!m_AsyncReceive)
+	{
+		while (m_pGameCoordinator->IsMessageAvailable(&size))
+		{
+			std::unique_ptr<char[]> memBlock = std::make_unique<char[]>(size);
+			m_pGameCoordinator->RetrieveMessage(&msgType, memBlock.get(), size, &size);
+		}
+	}
+
 	CMsgGCCStrike15_v2_ClientRequestJoinServerData msg;
 	msg.set_account_id(SteamUser()->GetSteamID().GetAccountID());
 	msg.set_serverid(serverid);
@@ -145,10 +159,6 @@ uint64_t GCClient::GetServerReservationId(uint64_t serverid, uint32_t serverip, 
 		return 0;
 
 	printf("Trying to request server reservation id from GC, this may take a while...\n");
-
-	uint32_t size;
-	uint32_t msgType;
-	uint32_t retry = 0;
 	while (true)
 	{
 		while (m_pGameCoordinator->IsMessageAvailable(&size))
