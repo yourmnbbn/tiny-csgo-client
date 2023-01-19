@@ -33,7 +33,12 @@ int main(int argc, char** argv)
         parser.GetOptionValueString("-pw"),
         parser.GetOptionValueInt16U("-port"),
         parser.HasOption("-cport") ? parser.GetOptionValueInt16U("-cport") : 27015);
-    cl.RunClient();
+    
+    do
+    {
+        cl.SetRetryState(false);
+        cl.RunClient();
+    } while (cl.GetRetryState());
 
     return 0;
 }

@@ -86,14 +86,20 @@ public:
 	[[nodiscard("Steam api must be confirmed working before running the client!")]]
 	bool						PrepareSteamAPI(); 
 	void						BindServer(const char* ip, const char* nickname, const char* password, uint16_t port, uint16_t clientport);
-	inline void					RunClient() { g_IoContext.run(); }
 	void						InitCommandInput();
+	bool						GetRetryState() { return m_flagRetry; }
+	void						SetRetryState(bool retry) { m_flagRetry = retry; }
+	inline void					RunClient(bool retry = false)
+	{ 
+		g_IoContext.reset();
+		asio::co_spawn(g_IoContext, ConnectToServer(), asio::detached);
+		g_IoContext.run();
+	}
 	
 private:
 	//Networking
 	asio::awaitable<void>		ConnectToServer();
-	asio::awaitable<bool>		RetryServer(udp::socket& socket, udp::endpoint& remote_endpoint);
-	asio::awaitable<bool>		StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint, bool isRetry = false);
+	asio::awaitable<void>		StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint);
 	asio::awaitable<bool>		SendConnectPacket(udp::socket& socket, udp::endpoint& remote_endpoint, uint32_t challenge, uint32_t auth_proto_version, uint32_t connect_proto_ver);
 	asio::awaitable<void>		HandleIncomingPacket(udp::socket& socket, udp::endpoint& remote_endpoint);
 	asio::awaitable<void>		SendDatagram(udp::socket& socket, udp::endpoint& remote_endpoint);
@@ -485,6 +491,8 @@ bool Client::CNetMessageHandler::HandleNetMessageFromBuffer(Client* client, bf_r
 		{
 			client->m_flagWaitForDisconnect = false;
 			client->m_flagRetry = true;
+
+			g_IoContext.stop();
 		}
 
 		return true;
@@ -793,8 +801,6 @@ void Client::BindServer(const char* ip, const char* nickname, const char* passwo
 	m_PassWord = password;
 	m_Port = port;
 	m_ClientPort = clientport;
-
-	asio::co_spawn(g_IoContext, ConnectToServer(), asio::detached);
 }
 
 void Client::InitCommandInput()
@@ -827,18 +833,7 @@ asio::awaitable<void> Client::ConnectToServer()
 	co_await StartConnectProcess(socket, remote_endpoint);
 }
 
-asio::awaitable<bool> Client::RetryServer(udp::socket& socket, udp::endpoint& remote_endpoint)
-{
-	//Clrear netchannel information
-	ClearNetchannelInfo();
-	
-	printf("Retrying to server %s:%u, using nickname %s, using password %s\n",
-		m_Ip.c_str(), m_Port, m_NickName.c_str(), m_PassWord.c_str());
-
-	co_return co_await StartConnectProcess(socket, remote_endpoint, true);
-}
-
-asio::awaitable<bool> Client::StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint, bool isRetry)
+asio::awaitable<void> Client::StartConnectProcess(udp::socket& socket, udp::endpoint& remote_endpoint)
 {
 	int challenge_retry = 0;
 
@@ -858,7 +853,7 @@ asio::awaitable<bool> Client::StartConnectProcess(udp::socket& socket, udp::endp
 		if (challenge_retry > CONFIG_MAX_RETRY_LIMIT)
 		{
 			printf("Error: Max retry limit(%i) exceeded\n", CONFIG_MAX_RETRY_LIMIT);
-			co_return false;
+			co_return;
 		}
 	}
 
@@ -870,15 +865,12 @@ asio::awaitable<bool> Client::StartConnectProcess(udp::socket& socket, udp::endp
 		if (auth_retry > CONFIG_MAX_RETRY_LIMIT)
 		{
 			printf("Error: Max retry limit(%i) exceeded\n", CONFIG_MAX_RETRY_LIMIT);
-			co_return false;
+			co_return;
 		}
 	}
 	
-	//If it's a retry connect, don't call this because we only have one running and suspended, will be resumed when return true
-	if(!isRetry)
-		co_await HandleIncomingPacket(socket, remote_endpoint);
-	
-	co_return true;
+	//Connection has been established, it's time to use network channel to communicate, should never return
+	co_await HandleIncomingPacket(socket, remote_endpoint);
 }
 
 asio::awaitable<bool> Client::SendConnectPacket(
@@ -1114,18 +1106,6 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 	//Process all incoming packet here after we established connection.
 	while (true)
 	{
-		//Suspend packet receiving here for a retry, resume when successfully retrying server
-		//HandleIncomingPacket will not be called again if it's a retry
-		if (m_flagRetry)
-		{
-			if (!(co_await RetryServer(socket, remote_endpoint)))
-			{
-				printf("Retrying server failed! \n");
-				co_return;
-			}
-			m_flagRetry = false;
-		}
-
 		HandleStringCommand();
 		co_await SendDatagram(socket, remote_endpoint);
 		co_await SendRawDatagramBuffer(socket, remote_endpoint);
@@ -1168,6 +1148,13 @@ asio::awaitable<void> Client::HandleIncomingPacket(udp::socket& socket, udp::end
 		}
 
 		ProcessPacket(length);
+
+		//When retrying, this loop should be stopped and network information should be cleared
+		if (m_flagRetry)
+		{
+			ClearNetchannelInfo();
+			break;
+		}
 	}
 
 	co_return;
